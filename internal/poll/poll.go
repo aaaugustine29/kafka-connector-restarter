@@ -7,22 +7,18 @@ import (
 	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 )
-
-type connectAPI struct {
-	client  *http.Client
-	baseURL string
-	auth    environment.AuthConfiguration
-}
 
 func Poll(ctx context.Context, config environment.Configuration) {
 	var connectHTTPClient = &http.Client{
 		Timeout: config.CommunicationConfig.RequestTimeout,
 	}
-	connect := connectAPI{
-		client:  connectHTTPClient,
-		baseURL: config.ConnectConfig.URL,
-		auth:    config.ConnectConfig.AuthConfig,
+	connect := status.ConnectAPI{
+		HTTPClient: connectHTTPClient,
+		BaseURL:    config.ConnectConfig.URL,
+		Auth:       config.ConnectConfig.AuthConfig,
 	}
 
 	ticker := time.NewTicker(config.PollingBehavior.Interval)
@@ -33,15 +29,15 @@ func Poll(ctx context.Context, config environment.Configuration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			connectorStatuses, err := FindConnectorStatuses(ctx, connect)
+			connectorStatuses, err := status.FindConnectorStatuses(ctx, connect)
 			if err != nil {
 				log.Printf("Error during poll cycle: %v", err)
 				continue
 			}
-			connectorRemediationActions := mapConnectorStatusesToActions(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
-			actionURLs := generateRemediationActionURLs(connectorRemediationActions, connect)
+			connectorRemediationActions := actions.MapConnectorStatusesToActions(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
+			actionURLs := actions.GenerateRemediationActionURLs(connectorRemediationActions, connect)
 			for _, actionURL := range actionURLs {
-				if err := takeAction(ctx, actionURL, connect); err != nil {
+				if err := actions.TakeAction(ctx, actionURL, connect); err != nil {
 					log.Printf("Error taking remediation action %s: %v", actionURL, err)
 				}
 			}
