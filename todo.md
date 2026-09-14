@@ -1,0 +1,1 @@
+- refactor defaults so that we can just return default values as structs when something isn't set
