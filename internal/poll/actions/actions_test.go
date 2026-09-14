@@ -1,4 +1,4 @@
-package poll
+package actions
 
 import (
 	"context"
@@ -8,76 +8,77 @@ import (
 	"testing"
 
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 )
 
 func TestDetermineAction(t *testing.T) {
 	tests := []struct {
 		name         string
-		connector    connectorStatus
+		connector    status.ConnectorStatus
 		restartTasks bool
-		expected     connectorRemediationActions
+		expected     RemediationAction
 	}{
 		{
 			name: "unhealthy connector is restarted",
-			connector: connectorStatus{
+			connector: status.ConnectorStatus{
 				Name:      "source-connector",
-				Connector: workerStatus{State: "FAILED"},
-				Tasks:     []taskStatus{{ID: 0, State: "FAILED"}},
+				Connector: status.WorkerStatus{State: "FAILED"},
+				Tasks:     []status.TaskStatus{{ID: 0, State: "FAILED"}},
 			},
 			restartTasks: false,
-			expected: connectorRemediationActions{
+			expected: RemediationAction{
 				ConnectorName: "source-connector",
 				Restart:       true,
 			},
 		},
 		{
 			name: "healthy connector with healthy tasks needs no action",
-			connector: connectorStatus{
+			connector: status.ConnectorStatus{
 				Name:      "sink-connector",
-				Connector: workerStatus{State: "running"},
-				Tasks: []taskStatus{
+				Connector: status.WorkerStatus{State: "running"},
+				Tasks: []status.TaskStatus{
 					{ID: 0, State: "RUNNING"},
 					{ID: 1, State: "running"},
 				},
 			},
 			restartTasks: true,
-			expected:     connectorRemediationActions{ConnectorName: "sink-connector"},
+			expected:     RemediationAction{ConnectorName: "sink-connector"},
 		},
 		{
 			name: "healthy connector restarts only failed tasks",
-			connector: connectorStatus{
+			connector: status.ConnectorStatus{
 				Name:      "mixed-connector",
-				Connector: workerStatus{State: "RUNNING"},
-				Tasks: []taskStatus{
+				Connector: status.WorkerStatus{State: "RUNNING"},
+				Tasks: []status.TaskStatus{
 					{ID: 0, State: "RUNNING"},
 					{ID: 1, State: "FAILED"},
 					{ID: 2, State: "PAUSED"},
 				},
 			},
 			restartTasks: true,
-			expected: connectorRemediationActions{
+			expected: RemediationAction{
 				ConnectorName:        "mixed-connector",
 				TaskIDsToBeRestarted: []int{1},
 			},
 		},
 		{
 			name: "task restart policy skips failed tasks",
-			connector: connectorStatus{
+			connector: status.ConnectorStatus{
 				Name:      "mixed-connector",
-				Connector: workerStatus{State: "RUNNING"},
-				Tasks: []taskStatus{
+				Connector: status.WorkerStatus{State: "RUNNING"},
+				Tasks: []status.TaskStatus{
 					{ID: 1, State: "FAILED"},
 				},
 			},
 			restartTasks: false,
-			expected:     connectorRemediationActions{ConnectorName: "mixed-connector"},
+			expected:     RemediationAction{ConnectorName: "mixed-connector"},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := determineAction(test.connector, test.restartTasks); !reflect.DeepEqual(got, test.expected) {
-				t.Fatalf("determineAction() = %#v, want %#v", got, test.expected)
+			if got := DetermineAction(test.connector, test.restartTasks); !reflect.DeepEqual(got, test.expected) {
+				t.Fatalf("DetermineAction() = %#v, want %#v", got, test.expected)
 			}
 		})
 	}
@@ -86,12 +87,12 @@ func TestDetermineAction(t *testing.T) {
 func TestGenerateRemediationActionURLs(t *testing.T) {
 	tests := []struct {
 		name     string
-		actions  []connectorRemediationActions
+		actions  []RemediationAction
 		expected []string
 	}{
 		{
 			name: "failed connector generates connector restart URL",
-			actions: []connectorRemediationActions{
+			actions: []RemediationAction{
 				{ConnectorName: "source-connector", Restart: true},
 			},
 			expected: []string{
@@ -100,7 +101,7 @@ func TestGenerateRemediationActionURLs(t *testing.T) {
 		},
 		{
 			name: "failed tasks generate task restart URLs",
-			actions: []connectorRemediationActions{
+			actions: []RemediationAction{
 				{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{1, 3}},
 			},
 			expected: []string{
@@ -110,7 +111,7 @@ func TestGenerateRemediationActionURLs(t *testing.T) {
 		},
 		{
 			name: "connector restart takes priority over task restarts",
-			actions: []connectorRemediationActions{
+			actions: []RemediationAction{
 				{ConnectorName: "source-connector", Restart: true, TaskIDsToBeRestarted: []int{1}},
 			},
 			expected: []string{
@@ -119,17 +120,17 @@ func TestGenerateRemediationActionURLs(t *testing.T) {
 		},
 		{
 			name:     "no remediation creates no URLs",
-			actions:  []connectorRemediationActions{{ConnectorName: "healthy-connector"}},
+			actions:  []RemediationAction{{ConnectorName: "healthy-connector"}},
 			expected: nil,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			connect := connectAPI{baseURL: "http://connect.example.test:8083"}
+			connect := status.ConnectAPI{BaseURL: "http://connect.example.test:8083"}
 
-			if got := generateRemediationActionURLs(test.actions, connect); !reflect.DeepEqual(got, test.expected) {
-				t.Fatalf("generateRemediationActionURLs() = %#v, want %#v", got, test.expected)
+			if got := GenerateRemediationActionURLs(test.actions, connect); !reflect.DeepEqual(got, test.expected) {
+				t.Fatalf("GenerateRemediationActionURLs() = %#v, want %#v", got, test.expected)
 			}
 		})
 	}
@@ -183,13 +184,13 @@ func TestTakeAction(t *testing.T) {
 			}))
 			defer server.Close()
 
-			connect := connectAPI{
-				client: server.Client(),
-				auth:   test.auth,
+			connect := status.ConnectAPI{
+				HTTPClient: server.Client(),
+				Auth:       test.auth,
 			}
-			err := takeAction(context.Background(), server.URL+"/connectors/source-connector/restart", connect)
+			err := TakeAction(context.Background(), server.URL+"/connectors/source-connector/restart", connect)
 			if (err != nil) != test.wantError {
-				t.Fatalf("takeAction() error = %v, want error = %t", err, test.wantError)
+				t.Fatalf("TakeAction() error = %v, want error = %t", err, test.wantError)
 			}
 		})
 	}

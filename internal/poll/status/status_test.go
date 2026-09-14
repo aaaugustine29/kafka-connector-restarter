@@ -1,4 +1,4 @@
-package poll
+package status
 
 import (
 	"context"
@@ -66,8 +66,8 @@ func TestNewRequestBasicAuth(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			connect := connectAPI{auth: test.auth}
-			request, err := connect.newRequest(context.Background(), http.MethodGet, "https://connect.example.test/connectors")
+			connect := ConnectAPI{Auth: test.auth}
+			request, err := connect.NewRequest(context.Background(), http.MethodGet, "https://connect.example.test/connectors")
 			if err != nil {
 				t.Fatalf("newRequest() error = %v", err)
 			}

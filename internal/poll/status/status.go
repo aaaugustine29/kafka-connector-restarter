@@ -1,37 +1,45 @@
-package poll
+package status
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"entropicworks.com/kafka-connector-restarter/internal/environment"
 )
 
-type taskStatus struct {
+type TaskStatus struct {
 	ID       int    `json:"id"`
 	State    string `json:"state"`
 	WorkerID string `json:"worker_id"`
 }
 
-type connectorStatus struct {
+type ConnectorStatus struct {
 	Name      string       `json:"name"`
-	Connector workerStatus `json:"connector"`
-	Tasks     []taskStatus `json:"tasks"`
+	Connector WorkerStatus `json:"connector"`
+	Tasks     []TaskStatus `json:"tasks"`
 	Type      string       `json:"type"`
 }
 
-type workerStatus struct {
+type WorkerStatus struct {
 	State    string `json:"state"`
 	WorkerID string `json:"worker_id"`
 }
 
+type ConnectAPI struct {
+	HTTPClient *http.Client
+	BaseURL    string
+	Auth       environment.AuthConfiguration
+}
+
 func FindConnectorStatuses(
 	ctx context.Context,
-	connect connectAPI,
-) (map[string]connectorStatus, error) {
-	requestURL := connect.baseURL + defaultConnectorStatusPath
+	connect ConnectAPI,
+) (map[string]ConnectorStatus, error) {
+	requestURL := connect.BaseURL + defaultConnectorStatusPath
 
-	request, err := connect.newRequest(
+	request, err := connect.NewRequest(
 		ctx,
 		http.MethodGet,
 		requestURL,
@@ -41,7 +49,7 @@ func FindConnectorStatuses(
 		return nil, fmt.Errorf("Error creating status request: %w", err)
 	}
 
-	response, err := connect.client.Do(request)
+	response, err := connect.HTTPClient.Do(request)
 
 	if err != nil {
 		return nil, fmt.Errorf("Error getting connector statuses: %w", err)
@@ -62,28 +70,28 @@ func FindConnectorStatuses(
 	return connectorStatuses, nil
 }
 
-func (connect connectAPI) newRequest(ctx context.Context, method string, requestURL string) (*http.Request, error) {
+func (connect ConnectAPI) NewRequest(ctx context.Context, method string, requestURL string) (*http.Request, error) {
 	request, err := http.NewRequestWithContext(ctx, method, requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if connect.auth.Enabled {
-		request.SetBasicAuth(connect.auth.Username, connect.auth.Password)
+	if connect.Auth.Enabled {
+		request.SetBasicAuth(connect.Auth.Username, connect.Auth.Password)
 	}
 
 	return request, nil
 }
 
-func mapConnectorStatusResponse(response *http.Response) (map[string]connectorStatus, error) {
+func mapConnectorStatusResponse(response *http.Response) (map[string]ConnectorStatus, error) {
 	var responseStatuses map[string]struct {
-		Status connectorStatus `json:"status"`
+		Status ConnectorStatus `json:"status"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&responseStatuses); err != nil {
 		return nil, fmt.Errorf("decode connector statuses: %w", err)
 	}
 
-	connectorStatuses := make(map[string]connectorStatus, len(responseStatuses))
+	connectorStatuses := make(map[string]ConnectorStatus, len(responseStatuses))
 	for name, responseStatus := range responseStatuses {
 		connectorStatuses[name] = responseStatus.Status
 	}

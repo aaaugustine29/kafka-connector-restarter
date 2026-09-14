@@ -1,4 +1,4 @@
-package poll
+package actions
 
 import (
 	"context"
@@ -6,16 +6,18 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 )
 
-type connectorRemediationActions struct {
+type RemediationAction struct {
 	ConnectorName        string
 	Restart              bool
 	TaskIDsToBeRestarted []int
 }
 
-func determineAction(connector connectorStatus, restartTasks bool) connectorRemediationActions {
-	var actions connectorRemediationActions
+func DetermineAction(connector status.ConnectorStatus, restartTasks bool) RemediationAction {
+	var actions RemediationAction
 
 	actions.ConnectorName = connector.Name
 	if strings.EqualFold(connector.Connector.State, "RUNNING") {
@@ -36,30 +38,30 @@ func determineAction(connector connectorStatus, restartTasks bool) connectorReme
 	return actions
 }
 
-func mapConnectorStatusesToActions(statuses map[string]connectorStatus, restartTasks bool) []connectorRemediationActions {
-	var connectorActions []connectorRemediationActions
+func MapConnectorStatusesToActions(statuses map[string]status.ConnectorStatus, restartTasks bool) []RemediationAction {
+	var connectorActions []RemediationAction
 	for _, status := range statuses {
-		connectorActions = append(connectorActions, determineAction(status, restartTasks))
+		connectorActions = append(connectorActions, DetermineAction(status, restartTasks))
 	}
 	return connectorActions
 }
 
-func generateRemediationActionURLs(actions []connectorRemediationActions, connect connectAPI) []string {
+func GenerateRemediationActionURLs(actions []RemediationAction, connect status.ConnectAPI) []string {
 	var restartURLs []string
 	for _, action := range actions {
 		if action.Restart {
-			restartURLs = append(restartURLs, connect.baseURL+fmt.Sprintf(defaultConnectorRestartPath, action.ConnectorName))
+			restartURLs = append(restartURLs, connect.BaseURL+fmt.Sprintf(defaultConnectorRestartPath, action.ConnectorName))
 		} else {
 			for _, taskID := range action.TaskIDsToBeRestarted {
-				restartURLs = append(restartURLs, connect.baseURL+fmt.Sprintf(defaultTaskRestartPath, action.ConnectorName, taskID))
+				restartURLs = append(restartURLs, connect.BaseURL+fmt.Sprintf(defaultTaskRestartPath, action.ConnectorName, taskID))
 			}
 		}
 	}
 	return restartURLs
 }
 
-func takeAction(ctx context.Context, actionURL string, connect connectAPI) error {
-	request, err := connect.newRequest(
+func TakeAction(ctx context.Context, actionURL string, connect status.ConnectAPI) error {
+	request, err := connect.NewRequest(
 		ctx,
 		http.MethodPost,
 		actionURL,
@@ -69,7 +71,7 @@ func takeAction(ctx context.Context, actionURL string, connect connectAPI) error
 		return fmt.Errorf("Error creating remediation request: %w", err)
 	}
 
-	response, err := connect.client.Do(request)
+	response, err := connect.HTTPClient.Do(request)
 
 	if err != nil {
 		return fmt.Errorf("Error taking action: %w", err)
