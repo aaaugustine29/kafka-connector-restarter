@@ -19,9 +19,16 @@ type AuthConfiguration struct {
 	Password string
 }
 
+type BackoffConfiguration struct {
+	Enabled     bool
+	BaseDelay   time.Duration
+	Exponential bool
+}
+
 type PollingBehavior struct {
 	Interval           time.Duration
 	RestartFailedTasks bool
+	Backoff            BackoffConfiguration
 }
 
 type ConnectConfiguration struct {
@@ -38,6 +45,51 @@ type Configuration struct {
 	ConnectConfig       ConnectConfiguration
 }
 
+func LoadBackoffConfiguration() BackoffConfiguration {
+	backoffConfig := BackoffConfiguration{
+		Enabled:     DefaultRestartBackoffEnabled,
+		BaseDelay:   DefaultRestartBackoffBaseDelay,
+		Exponential: DefaultRestartBackoffExponentialEnabled,
+	}
+
+	backoffEnabledString := os.Getenv(RestartBackoffEnabled)
+	if backoffEnabledString == "" {
+		log.Println("No value of", RestartBackoffEnabled, "set; using default of", DefaultRestartBackoffEnabled)
+	} else {
+		backoffEnabled, err := strconv.ParseBool(backoffEnabledString)
+		if err != nil {
+			log.Println("Invalid", RestartBackoffEnabled, "value of", backoffEnabledString, "; using default of", DefaultRestartBackoffEnabled)
+		} else {
+			backoffConfig.Enabled = backoffEnabled
+		}
+	}
+
+	backoffBaseDelayString := os.Getenv(RestartBackoffBaseDelayMS)
+	if backoffBaseDelayString == "" {
+		log.Println("No value of", RestartBackoffBaseDelayMS, "set; using default of", DefaultRestartBackoffBaseDelay)
+	} else {
+		backoffBaseDelay, err := strconv.Atoi(backoffBaseDelayString)
+		if err != nil || backoffBaseDelay <= 0 {
+			log.Println("Invalid", RestartBackoffBaseDelayMS, "value of", backoffBaseDelayString, "; using default of", DefaultRestartBackoffBaseDelay)
+		} else {
+			backoffConfig.BaseDelay = time.Duration(backoffBaseDelay) * time.Millisecond
+		}
+	}
+
+	exponentialBackoffEnabledString := os.Getenv(RestartBackoffExponentialEnabled)
+	if exponentialBackoffEnabledString == "" {
+		log.Println("No value of", RestartBackoffExponentialEnabled, "set; using default of", DefaultRestartBackoffExponentialEnabled)
+	} else {
+		exponentialBackoffEnabled, err := strconv.ParseBool(exponentialBackoffEnabledString)
+		if err != nil {
+			log.Println("Invalid", RestartBackoffExponentialEnabled, "value of", exponentialBackoffEnabledString, "; using default of", DefaultRestartBackoffExponentialEnabled)
+		} else {
+			backoffConfig.Exponential = exponentialBackoffEnabled
+		}
+	}
+	return backoffConfig
+}
+
 func LoadConfig() Configuration {
 	return Configuration{
 		PollingBehavior:     LoadPollingBehavior(),
@@ -50,6 +102,7 @@ func LoadPollingBehavior() PollingBehavior {
 	return PollingBehavior{
 		Interval:           LoadPollingInterval(),
 		RestartFailedTasks: LoadRestartFailedTasks(),
+		Backoff:            LoadBackoffConfiguration(),
 	}
 }
 

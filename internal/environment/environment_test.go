@@ -52,12 +52,106 @@ func TestLoadRestartFailedTasks(t *testing.T) {
 	}
 }
 
+func TestLoadBackoffConfiguration(t *testing.T) {
+	tests := []struct {
+		name        string
+		enabled     string
+		baseDelayMS string
+		exponential string
+		expected    BackoffConfiguration
+	}{
+		{
+			name: "unset uses defaults",
+			expected: BackoffConfiguration{
+				Enabled:     DefaultRestartBackoffEnabled,
+				BaseDelay:   DefaultRestartBackoffBaseDelay,
+				Exponential: DefaultRestartBackoffExponentialEnabled,
+			},
+		},
+		{
+			name:        "valid values are loaded",
+			enabled:     "true",
+			baseDelayMS: "250",
+			exponential: "false",
+			expected: BackoffConfiguration{
+				Enabled:     true,
+				BaseDelay:   250 * time.Millisecond,
+				Exponential: false,
+			},
+		},
+		{
+			name:        "disabled backoff retains the rest of its configuration",
+			enabled:     "false",
+			baseDelayMS: "250",
+			exponential: "false",
+			expected: BackoffConfiguration{
+				Enabled:     false,
+				BaseDelay:   250 * time.Millisecond,
+				Exponential: false,
+			},
+		},
+		{
+			name:        "invalid values use defaults",
+			enabled:     "sometimes",
+			baseDelayMS: "not-a-number",
+			exponential: "sometimes",
+			expected: BackoffConfiguration{
+				Enabled:     DefaultRestartBackoffEnabled,
+				BaseDelay:   DefaultRestartBackoffBaseDelay,
+				Exponential: DefaultRestartBackoffExponentialEnabled,
+			},
+		},
+		{
+			name:        "zero base delay uses default",
+			baseDelayMS: "0",
+			expected: BackoffConfiguration{
+				Enabled:     DefaultRestartBackoffEnabled,
+				BaseDelay:   DefaultRestartBackoffBaseDelay,
+				Exponential: DefaultRestartBackoffExponentialEnabled,
+			},
+		},
+		{
+			name:        "negative base delay uses default",
+			baseDelayMS: "-1",
+			expected: BackoffConfiguration{
+				Enabled:     DefaultRestartBackoffEnabled,
+				BaseDelay:   DefaultRestartBackoffBaseDelay,
+				Exponential: DefaultRestartBackoffExponentialEnabled,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(RestartBackoffEnabled, test.enabled)
+			t.Setenv(RestartBackoffBaseDelayMS, test.baseDelayMS)
+			t.Setenv(RestartBackoffExponentialEnabled, test.exponential)
+
+			if got := LoadBackoffConfiguration(); got != test.expected {
+				t.Fatalf("LoadBackoffConfiguration() = %#v, want %#v", got, test.expected)
+			}
+		})
+	}
+}
+
 func TestLoadConfigIncludesPollingBehavior(t *testing.T) {
 	t.Setenv(PollingIntervalEnv, "250")
 	t.Setenv(PollingRestartFailedTasks, "false")
+	t.Setenv(RestartBackoffEnabled, "false")
+	t.Setenv(RestartBackoffBaseDelayMS, "500")
+	t.Setenv(RestartBackoffExponentialEnabled, "false")
 
-	if got := LoadConfig().PollingBehavior; got.Interval != 250*time.Millisecond || got.RestartFailedTasks {
-		t.Fatalf("LoadConfig().PollingBehavior = %#v, want interval 250ms and RestartFailedTasks false", got)
+	expected := PollingBehavior{
+		Interval:           250 * time.Millisecond,
+		RestartFailedTasks: false,
+		Backoff: BackoffConfiguration{
+			Enabled:     false,
+			BaseDelay:   500 * time.Millisecond,
+			Exponential: false,
+		},
+	}
+	if got := LoadConfig().PollingBehavior; got != expected {
+		t.Fatalf("LoadConfig().PollingBehavior = %#v, want %#v", got, expected)
 	}
 }
 
