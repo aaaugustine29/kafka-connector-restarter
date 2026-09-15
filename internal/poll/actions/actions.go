@@ -16,9 +16,12 @@ type RemediationAction struct {
 	TaskIDsToBeRestarted []int
 }
 
-func DetermineAction(connector status.ConnectorStatus, restartTasks bool) RemediationAction {
-	var actions RemediationAction
+func DetermineAction(
+	connector status.ConnectorStatus,
+	restartTasks bool,
 
+) RemediationAction {
+	var actions RemediationAction
 	actions.ConnectorName = connector.Name
 	if strings.EqualFold(connector.Connector.State, "RUNNING") {
 		if restartTasks {
