@@ -34,7 +34,7 @@ func Poll(ctx context.Context, config environment.Configuration) {
 				log.Printf("Error during poll cycle: %v", err)
 				continue
 			}
-			connectorRemediationActions := actions.MapConnectorStatusesToActions(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
+			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
 			actionURLs := actions.GenerateRemediationActionURLs(connectorRemediationActions, connect)
 			for _, actionURL := range actionURLs {
 				if err := actions.TakeAction(ctx, actionURL, connect); err != nil {
