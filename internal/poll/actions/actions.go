@@ -48,25 +48,37 @@ func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, res
 	return connectorActions
 }
 
-func GenerateRemediationActionURLs(actions []RemediationAction, connect status.ConnectAPI) []string {
-	var restartURLs []string
-	for _, action := range actions {
-		if action.Restart {
-			restartURLs = append(restartURLs, connect.BaseURL+fmt.Sprintf(defaultConnectorRestartPath, action.ConnectorName))
-		} else {
-			for _, taskID := range action.TaskIDsToBeRestarted {
-				restartURLs = append(restartURLs, connect.BaseURL+fmt.Sprintf(defaultTaskRestartPath, action.ConnectorName, taskID))
+func generateRemediationActionURL(connect status.ConnectAPI, connectorName string, taskID *int) string {
+	if taskID == nil {
+		return connect.BaseURL + fmt.Sprintf(defaultConnectorRestartPath, connectorName)
+	} else {
+		return connect.BaseURL + fmt.Sprintf(defaultTaskRestartPath, connectorName, *taskID)
+	}
+
+}
+
+// You probably need to work on how the errors are handled here, how do you want to return errors for multiple tasks?
+func TakeAction(ctx context.Context, remediationAction RemediationAction, connect status.ConnectAPI) error {
+	if remediationAction.Restart {
+		restartURL := generateRemediationActionURL(connect, remediationAction.ConnectorName, nil)
+		return makeActionRequest(ctx, connect, restartURL)
+	} else {
+		for _, taskID := range remediationAction.TaskIDsToBeRestarted {
+			restartURL := generateRemediationActionURL(connect, remediationAction.ConnectorName, &taskID)
+			err := makeActionRequest(ctx, connect, restartURL)
+			if err != nil {
+				return err
 			}
 		}
 	}
-	return restartURLs
+	return nil
 }
 
-func TakeAction(ctx context.Context, actionURL string, connect status.ConnectAPI) error {
+func makeActionRequest(ctx context.Context, connect status.ConnectAPI, requestURL string) error {
 	request, err := connect.NewRequest(
 		ctx,
 		http.MethodPost,
-		actionURL,
+		requestURL,
 	)
 
 	if err != nil {
@@ -84,6 +96,5 @@ func TakeAction(ctx context.Context, actionURL string, connect status.ConnectAPI
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("Unexpected HTTP status code of %d with HTTP status of %s", response.StatusCode, response.Status)
 	}
-
 	return nil
 }
