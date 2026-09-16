@@ -6,59 +6,59 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
 )
 
-type TaskBackoffHistory struct {
+type TaskBackoffStatus struct {
 	LastTaskRestartAttemptTime time.Time
-	ConnectorRestartAttempts   int
+	TaskRestartAttempts        int
 }
 
-type ConnectorBackoffHistory struct {
+type ConnectorBackoffStatus struct {
 	LastConnectorRestartAttemptTime time.Time
 	ConnectorRestartAttempts        int
 	LastTaskRestartAttemptTime      map[int]time.Time
 }
 
-func IsConnectorOutsideBackoffWindow(
+func IsConnectorInBackoffWindow(
 	backoffConfig environment.BackoffConfiguration,
-	backoffHistory ConnectorBackoffHistory,
+	backoffStatus ConnectorBackoffStatus,
 ) bool {
 	nextBackoffTime := determineNextActionTime(
-		backoffHistory.LastConnectorRestartAttemptTime,
+		backoffStatus.LastConnectorRestartAttemptTime,
 		backoffConfig.BaseDelay,
-		backoffHistory.ConnectorRestartAttempts,
+		backoffStatus.ConnectorRestartAttempts,
 		backoffConfig.Exponential,
 	)
 	if !backoffConfig.Enabled {
 		return false
 	} else {
-		if backoffHistory.LastConnectorRestartAttemptTime.IsZero() {
+		if backoffStatus.LastConnectorRestartAttemptTime.IsZero() {
 			return false
-		} else if nextBackoffTime.Before(time.Now()) {
-			return false
-		} else {
+		} else if time.Now().Before(nextBackoffTime) {
 			return true
+		} else {
+			return false
 		}
 	}
 }
 
-func isTaskOutsideBackoffWindow(
+func IsTaskInBackoffWindow(
 	backoffConfig environment.BackoffConfiguration,
-	backoffHistory TaskBackoffHistory,
+	backoffStatus TaskBackoffStatus,
 ) bool {
 	nextBackoffTime := determineNextActionTime(
-		backoffHistory.LastTaskRestartAttemptTime,
+		backoffStatus.LastTaskRestartAttemptTime,
 		backoffConfig.BaseDelay,
-		backoffHistory.ConnectorRestartAttempts,
+		backoffStatus.TaskRestartAttempts,
 		backoffConfig.Exponential,
 	)
 	if !backoffConfig.Enabled {
 		return false
 	} else {
-		if backoffHistory.LastTaskRestartAttemptTime.IsZero() {
+		if backoffStatus.LastTaskRestartAttemptTime.IsZero() {
 			return false
-		} else if nextBackoffTime.Before(time.Now()) {
-			return false
-		} else {
+		} else if time.Now().Before(nextBackoffTime) {
 			return true
+		} else {
+			return false
 		}
 	}
 }
@@ -71,7 +71,7 @@ func determineNextActionTime(
 ) time.Time {
 	nextActionTime := lastRestartTime
 	if exponential {
-		return nextActionTime.Add(baseDelay * time.Duration(2<<attempts))
+		return nextActionTime.Add(baseDelay * time.Duration(1<<(attempts)))
 	} else {
 		return nextActionTime.Add(baseDelay)
 	}
