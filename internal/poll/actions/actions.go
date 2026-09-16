@@ -19,7 +19,6 @@ type RemediationAction struct {
 func DetermineAction(
 	connector status.ConnectorStatus,
 	restartTasks bool,
-
 ) RemediationAction {
 	var actions RemediationAction
 	actions.ConnectorName = connector.Name

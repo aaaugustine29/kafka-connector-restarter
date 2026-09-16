@@ -1,1 +1,2 @@
 - refactor defaults so that we can just return default values as structs when something isn't set
+- consider having the configuration functions just be run like LoadConfig() and have it as variables that are available within the package, like global variables. As a part of this you could also have the environment packages separated out a little to have the imports be cleaners. This also helps the structure thing you were looking for before.
