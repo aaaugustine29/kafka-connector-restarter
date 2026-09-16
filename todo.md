@@ -1,2 +1,3 @@
+- Also, connectAPI shouldn't be in status. Maybe we need some extra thing like utils?
 - Refactor so urls are generated within the takeAction, no reason to pass urls around.
 - refactor defaults so that we can just return default values as structs when something isn't set

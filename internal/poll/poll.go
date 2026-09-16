@@ -35,10 +35,9 @@ func Poll(ctx context.Context, config environment.Configuration) {
 				continue
 			}
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
-			actionURLs := actions.GenerateRemediationActionURLs(connectorRemediationActions, connect)
-			for _, actionURL := range actionURLs {
-				if err := actions.TakeAction(ctx, actionURL, connect); err != nil {
-					log.Printf("Error taking remediation action %s: %v", actionURL, err)
+			for _, remediationAction := range connectorRemediationActions {
+				if err := actions.TakeAction(ctx, remediationAction, connect); err != nil {
+					// log.Printf("Error taking remediation action %s: %v", actionURL, err)
 				}
 			}
 		}
