@@ -40,7 +40,7 @@ func DetermineAction(
 	return actions
 }
 
-func MapConnectorStatusesToActions(statuses map[string]status.ConnectorStatus, restartTasks bool) []RemediationAction {
+func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, restartTasks bool) []RemediationAction {
 	var connectorActions []RemediationAction
 	for _, status := range statuses {
 		connectorActions = append(connectorActions, DetermineAction(status, restartTasks))
