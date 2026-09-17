@@ -4,9 +4,10 @@ import (
 	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 )
 
-type TaskBackoffStatus struct {
+type taskBackoffStatus struct {
 	LastTaskRestartAttemptTime time.Time
 	TaskRestartAttempts        int
 }
@@ -14,10 +15,42 @@ type TaskBackoffStatus struct {
 type ConnectorBackoffStatus struct {
 	LastConnectorRestartAttemptTime time.Time
 	ConnectorRestartAttempts        int
-	LastTaskRestartAttemptTime      map[int]time.Time
+	TaskBackoffStatuses             map[int]taskBackoffStatus
 }
 
-func IsConnectorInBackoffWindow(
+type BackoffFilterer struct {
+	BackoffConfig            environment.BackoffConfiguration
+	ConnectorBackoffStatuses map[string]ConnectorBackoffStatus
+}
+
+func (backoffFilterer BackoffFilterer) FilterByBackoffs(originalRemediationActions []actions.RemediationAction) []actions.RemediationAction {
+	var filteredActions []actions.RemediationAction
+	for _, originalRemediationAction := range originalRemediationActions {
+		connectorBackoffStatus := backoffFilterer.ConnectorBackoffStatuses[originalRemediationAction.ConnectorName]
+		if originalRemediationAction.Restart {
+			if !isConnectorInBackoffWindow(backoffFilterer.BackoffConfig, connectorBackoffStatus) {
+				filteredActions = append(filteredActions, originalRemediationAction)
+			} else {
+				filteredActions = append(filteredActions, originalRemediationAction)
+			}
+		} else {
+			var filteredTaskIDsToBeRestarted []int
+			for _, originalTaskToBeRestarted := range originalRemediationAction.TaskIDsToBeRestarted {
+				taskBackoffStatus := backoffFilterer.ConnectorBackoffStatuses[originalRemediationAction.ConnectorName].TaskBackoffStatuses[originalTaskToBeRestarted]
+				if !isTaskInBackoffWindow(backoffFilterer.BackoffConfig, taskBackoffStatus) {
+					filteredTaskIDsToBeRestarted = append(filteredTaskIDsToBeRestarted, originalTaskToBeRestarted)
+				}
+			}
+			if len(filteredTaskIDsToBeRestarted) > 0 {
+				originalRemediationAction.TaskIDsToBeRestarted = filteredTaskIDsToBeRestarted
+				filteredActions = append(filteredActions, originalRemediationAction)
+			}
+		}
+	}
+	return filteredActions
+}
+
+func isConnectorInBackoffWindow(
 	backoffConfig environment.BackoffConfiguration,
 	backoffStatus ConnectorBackoffStatus,
 ) bool {
@@ -27,22 +60,18 @@ func IsConnectorInBackoffWindow(
 		backoffStatus.ConnectorRestartAttempts,
 		backoffConfig.Exponential,
 	)
-	if !backoffConfig.Enabled {
+	if backoffStatus.LastConnectorRestartAttemptTime.IsZero() {
 		return false
+	} else if time.Now().Before(nextBackoffTime) {
+		return true
 	} else {
-		if backoffStatus.LastConnectorRestartAttemptTime.IsZero() {
-			return false
-		} else if time.Now().Before(nextBackoffTime) {
-			return true
-		} else {
-			return false
-		}
+		return false
 	}
 }
 
-func IsTaskInBackoffWindow(
+func isTaskInBackoffWindow(
 	backoffConfig environment.BackoffConfiguration,
-	backoffStatus TaskBackoffStatus,
+	backoffStatus taskBackoffStatus,
 ) bool {
 	nextBackoffTime := determineNextActionTime(
 		backoffStatus.LastTaskRestartAttemptTime,
@@ -50,16 +79,12 @@ func IsTaskInBackoffWindow(
 		backoffStatus.TaskRestartAttempts,
 		backoffConfig.Exponential,
 	)
-	if !backoffConfig.Enabled {
+	if backoffStatus.LastTaskRestartAttemptTime.IsZero() {
 		return false
+	} else if time.Now().Before(nextBackoffTime) {
+		return true
 	} else {
-		if backoffStatus.LastTaskRestartAttemptTime.IsZero() {
-			return false
-		} else if time.Now().Before(nextBackoffTime) {
-			return true
-		} else {
-			return false
-		}
+		return false
 	}
 }
 
