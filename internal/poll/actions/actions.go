@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
 type RemediationAction struct {
@@ -48,7 +49,7 @@ func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, res
 	return connectorActions
 }
 
-func generateRemediationActionURL(connect status.ConnectAPI, connectorName string, taskID *int) string {
+func generateRemediationActionURL(connect requests.ConnectAPI, connectorName string, taskID *int) string {
 	if taskID == nil {
 		return connect.BaseURL + fmt.Sprintf(defaultConnectorRestartPath, connectorName)
 	} else {
@@ -58,7 +59,7 @@ func generateRemediationActionURL(connect status.ConnectAPI, connectorName strin
 }
 
 // You probably need to work on how the errors are handled here, how do you want to return errors for multiple tasks?
-func TakeAction(ctx context.Context, remediationAction RemediationAction, connect status.ConnectAPI) error {
+func TakeAction(ctx context.Context, remediationAction RemediationAction, connect requests.ConnectAPI) error {
 	if remediationAction.Restart {
 		restartURL := generateRemediationActionURL(connect, remediationAction.ConnectorName, nil)
 		return makeActionRequest(ctx, connect, restartURL)
@@ -74,7 +75,7 @@ func TakeAction(ctx context.Context, remediationAction RemediationAction, connec
 	return nil
 }
 
-func makeActionRequest(ctx context.Context, connect status.ConnectAPI, requestURL string) error {
+func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, requestURL string) error {
 	request, err := connect.NewRequest(
 		ctx,
 		http.MethodPost,
