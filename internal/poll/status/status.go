@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
 type TaskStatus struct {
@@ -27,15 +27,9 @@ type WorkerStatus struct {
 	WorkerID string `json:"worker_id"`
 }
 
-type ConnectAPI struct {
-	HTTPClient *http.Client
-	BaseURL    string
-	Auth       environment.AuthConfiguration
-}
-
 func FindConnectorStatuses(
 	ctx context.Context,
-	connect ConnectAPI,
+	connect requests.ConnectAPI,
 ) (map[string]ConnectorStatus, error) {
 	requestURL := connect.BaseURL + defaultConnectorStatusPath
 
@@ -68,19 +62,6 @@ func FindConnectorStatuses(
 	}
 
 	return connectorStatuses, nil
-}
-
-func (connect ConnectAPI) NewRequest(ctx context.Context, method string, requestURL string) (*http.Request, error) {
-	request, err := http.NewRequestWithContext(ctx, method, requestURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if connect.Auth.Enabled {
-		request.SetBasicAuth(connect.Auth.Username, connect.Auth.Password)
-	}
-
-	return request, nil
 }
 
 func mapConnectorStatusResponse(response *http.Response) (map[string]ConnectorStatus, error) {

@@ -9,13 +9,14 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
 func Poll(ctx context.Context, config environment.Configuration) {
 	var connectHTTPClient = &http.Client{
 		Timeout: config.CommunicationConfig.RequestTimeout,
 	}
-	connect := status.ConnectAPI{
+	connect := requests.ConnectAPI{
 		HTTPClient: connectHTTPClient,
 		BaseURL:    config.ConnectConfig.URL,
 		Auth:       config.ConnectConfig.AuthConfig,
