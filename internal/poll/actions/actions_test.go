@@ -9,6 +9,7 @@ import (
 
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
 func TestDetermineAction(t *testing.T) {
@@ -84,72 +85,59 @@ func TestDetermineAction(t *testing.T) {
 	}
 }
 
-func TestGenerateRemediationActionURLs(t *testing.T) {
-	tests := []struct {
-		name     string
-		actions  []RemediationAction
-		expected []string
-	}{
-		{
-			name: "failed connector generates connector restart URL",
-			actions: []RemediationAction{
-				{ConnectorName: "source-connector", Restart: true},
-			},
-			expected: []string{
-				"http://connect.example.test:8083/connectors/source-connector/restart?includeTasks=true&onlyFailed=true",
-			},
-		},
-		{
-			name: "failed tasks generate task restart URLs",
-			actions: []RemediationAction{
-				{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{1, 3}},
-			},
-			expected: []string{
-				"http://connect.example.test:8083/connectors/sink-connector/tasks/1/restart",
-				"http://connect.example.test:8083/connectors/sink-connector/tasks/3/restart",
-			},
-		},
-		{
-			name: "connector restart takes priority over task restarts",
-			actions: []RemediationAction{
-				{ConnectorName: "source-connector", Restart: true, TaskIDsToBeRestarted: []int{1}},
-			},
-			expected: []string{
-				"http://connect.example.test:8083/connectors/source-connector/restart?includeTasks=true&onlyFailed=true",
-			},
-		},
-		{
-			name:     "no remediation creates no URLs",
-			actions:  []RemediationAction{{ConnectorName: "healthy-connector"}},
-			expected: nil,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			connect := status.ConnectAPI{BaseURL: "http://connect.example.test:8083"}
-
-			if got := GenerateRemediationActionURLs(test.actions, connect); !reflect.DeepEqual(got, test.expected) {
-				t.Fatalf("GenerateRemediationActionURLs() = %#v, want %#v", got, test.expected)
-			}
-		})
-	}
-}
-
 func TestTakeAction(t *testing.T) {
+	type expectedRequest struct {
+		path       string
+		rawQuery   string
+		statusCode int
+	}
+
 	tests := []struct {
-		name         string
-		statusCode   int
-		auth         environment.AuthConfiguration
-		expectedAuth bool
-		wantError    bool
+		name             string
+		action           RemediationAction
+		expectedRequests []expectedRequest
+		auth             environment.AuthConfiguration
+		expectedAuth     bool
+		wantError        bool
 	}{
-		{name: "OK is accepted", statusCode: http.StatusOK},
-		{name: "accepted is accepted", statusCode: http.StatusAccepted},
-		{name: "no content is accepted", statusCode: http.StatusNoContent},
 		{
-			name:       "Basic Auth is sent",
-			statusCode: http.StatusAccepted,
+			name:   "OK connector restart is accepted",
+			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			expectedRequests: []expectedRequest{{
+				path:       "/connectors/source-connector/restart",
+				rawQuery:   "includeTasks=true&onlyFailed=true",
+				statusCode: http.StatusOK,
+			}},
+		},
+		{
+			name:   "accepted task restarts are accepted",
+			action: RemediationAction{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{1, 3}},
+			expectedRequests: []expectedRequest{
+				{path: "/connectors/sink-connector/tasks/1/restart", statusCode: http.StatusAccepted},
+				{path: "/connectors/sink-connector/tasks/3/restart", statusCode: http.StatusAccepted},
+			},
+		},
+		{
+			name:   "connector restart takes priority over task restarts",
+			action: RemediationAction{ConnectorName: "source-connector", Restart: true, TaskIDsToBeRestarted: []int{1}},
+			expectedRequests: []expectedRequest{{
+				path:       "/connectors/source-connector/restart",
+				rawQuery:   "includeTasks=true&onlyFailed=true",
+				statusCode: http.StatusNoContent,
+			}},
+		},
+		{
+			name:   "no remediation sends no request",
+			action: RemediationAction{ConnectorName: "healthy-connector"},
+		},
+		{
+			name:   "Basic Auth is sent",
+			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			expectedRequests: []expectedRequest{{
+				path:       "/connectors/source-connector/restart",
+				rawQuery:   "includeTasks=true&onlyFailed=true",
+				statusCode: http.StatusAccepted,
+			}},
 			auth: environment.AuthConfiguration{
 				Enabled:  true,
 				Username: "connect-user",
@@ -157,19 +145,59 @@ func TestTakeAction(t *testing.T) {
 			},
 			expectedAuth: true,
 		},
-		{name: "unauthorized returns an error", statusCode: http.StatusUnauthorized, wantError: true},
-		{name: "rebalance conflict returns an error", statusCode: http.StatusConflict, wantError: true},
-		{name: "server error returns an error", statusCode: http.StatusInternalServerError, wantError: true},
+		{
+			name:   "unauthorized returns an error",
+			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			expectedRequests: []expectedRequest{{
+				path:       "/connectors/source-connector/restart",
+				rawQuery:   "includeTasks=true&onlyFailed=true",
+				statusCode: http.StatusUnauthorized,
+			}},
+			wantError: true,
+		},
+		{
+			name:   "rebalance conflict returns an error",
+			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			expectedRequests: []expectedRequest{{
+				path:       "/connectors/source-connector/restart",
+				rawQuery:   "includeTasks=true&onlyFailed=true",
+				statusCode: http.StatusConflict,
+			}},
+			wantError: true,
+		},
+		{
+			name:   "server error returns an error",
+			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			expectedRequests: []expectedRequest{{
+				path:       "/connectors/source-connector/restart",
+				rawQuery:   "includeTasks=true&onlyFailed=true",
+				statusCode: http.StatusInternalServerError,
+			}},
+			wantError: true,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			requestIndex := 0
 			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				if requestIndex >= len(test.expectedRequests) {
+					t.Errorf("received unexpected request %s", request.URL)
+					response.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
+				expected := test.expectedRequests[requestIndex]
+				requestIndex++
+
 				if request.Method != http.MethodPost {
 					t.Errorf("request method = %s, want %s", request.Method, http.MethodPost)
 				}
-				if request.URL.Path != "/connectors/source-connector/restart" {
-					t.Errorf("request path = %s, want /connectors/source-connector/restart", request.URL.Path)
+				if request.URL.Path != expected.path {
+					t.Errorf("request path = %s, want %s", request.URL.Path, expected.path)
+				}
+				if request.URL.RawQuery != expected.rawQuery {
+					t.Errorf("request query = %s, want %s", request.URL.RawQuery, expected.rawQuery)
 				}
 
 				username, password, ok := request.BasicAuth()
@@ -180,17 +208,21 @@ func TestTakeAction(t *testing.T) {
 					t.Errorf("request.BasicAuth() = (%q, %q), want (%q, %q)", username, password, test.auth.Username, test.auth.Password)
 				}
 
-				response.WriteHeader(test.statusCode)
+				response.WriteHeader(expected.statusCode)
 			}))
 			defer server.Close()
 
-			connect := status.ConnectAPI{
+			connect := requests.ConnectAPI{
 				HTTPClient: server.Client(),
+				BaseURL:    server.URL,
 				Auth:       test.auth,
 			}
-			err := TakeAction(context.Background(), server.URL+"/connectors/source-connector/restart", connect)
+			err := TakeAction(context.Background(), test.action, connect)
 			if (err != nil) != test.wantError {
 				t.Fatalf("TakeAction() error = %v, want error = %t", err, test.wantError)
+			}
+			if requestIndex != len(test.expectedRequests) {
+				t.Fatalf("received %d requests, want %d", requestIndex, len(test.expectedRequests))
 			}
 		})
 	}
