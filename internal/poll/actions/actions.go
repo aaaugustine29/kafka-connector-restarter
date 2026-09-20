@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,31 +13,45 @@ import (
 )
 
 type RemediationAction struct {
-	ConnectorName        string
-	Restart              bool
-	TaskIDsToBeRestarted []int
+	ConnectorName string
+	Kind          ActionKind
+	TaskID        int
 }
 
-func DetermineAction(
-	connector status.ConnectorStatus,
+type ActionKind string
+
+const (
+	RestartConnector ActionKind = "restart_connector"
+	RestartTask      ActionKind = "restart_task"
+)
+
+func DetermineActionsForConnector(
+	status status.ConnectorStatus,
 	restartTasks bool,
-) RemediationAction {
-	var actions RemediationAction
-	actions.ConnectorName = connector.Name
-	if strings.EqualFold(connector.Connector.State, "RUNNING") {
+) []RemediationAction {
+	var actions []RemediationAction
+	if strings.EqualFold(status.Connector.State, "RUNNING") {
 		if restartTasks {
-			for _, task := range connector.Tasks {
+			for _, task := range status.Tasks {
 				if strings.EqualFold(task.State, "FAILED") {
-					actions.TaskIDsToBeRestarted = append(actions.TaskIDsToBeRestarted, task.ID)
-					log.Println("Task", task.ID, "of connector", connector.Name, "appears to be unhealthy")
+					actions = append(actions, RemediationAction{
+						ConnectorName: status.Name,
+						Kind:          RestartTask,
+						TaskID:        task.ID,
+					})
+					log.Println("Task", task.ID, "of connector", status.Name, "appears to be unhealthy")
 				}
 			}
 		}
-	} else if strings.EqualFold(connector.Connector.State, "FAILED") {
-		actions.Restart = true
-		log.Println("Connector", connector.Name, "is in a failed state.")
+	} else if strings.EqualFold(status.Connector.State, "FAILED") {
+		actions = append(actions, RemediationAction{
+			ConnectorName: status.Name,
+			Kind:          RestartConnector,
+			TaskID:        0,
+		})
+		log.Println("Connector", status.Name, "is in a failed state.")
 	} else {
-		log.Println("Connector", connector.Name, "is in state", connector.Connector.State, ". No action being taken.")
+		log.Println("Connector", status.Name, "is in state", status.Connector.State, ". No action being taken.")
 	}
 	return actions
 }
@@ -44,35 +59,29 @@ func DetermineAction(
 func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, restartTasks bool) []RemediationAction {
 	var connectorActions []RemediationAction
 	for _, status := range statuses {
-		connectorActions = append(connectorActions, DetermineAction(status, restartTasks))
+		connectorActions = append(connectorActions, DetermineActionsForConnector(status, restartTasks)...)
 	}
 	return connectorActions
 }
 
-func generateRemediationActionURL(connect requests.ConnectAPI, connectorName string, taskID *int) string {
-	if taskID == nil {
-		return connect.BaseURL + fmt.Sprintf(defaultConnectorRestartPath, connectorName)
+func generateRemediationActionURL(connect requests.ConnectAPI, action RemediationAction) (string, error) {
+	if action.Kind == RestartConnector {
+		return connect.BaseURL + fmt.Sprintf(defaultConnectorRestartPath, action.ConnectorName), nil
+	} else if action.Kind == RestartTask {
+		return connect.BaseURL + fmt.Sprintf(defaultTaskRestartPath, action.ConnectorName, action.TaskID), nil
 	} else {
-		return connect.BaseURL + fmt.Sprintf(defaultTaskRestartPath, connectorName, *taskID)
+		return "", errors.New(fmt.Sprintf("While taking action: Unknown action kind: %s for connector %s or task %d\n",
+			action.Kind, action.ConnectorName, action.TaskID))
 	}
-
 }
 
-// You probably need to work on how the errors are handled here, how do you want to return errors for multiple tasks?
 func TakeAction(ctx context.Context, remediationAction RemediationAction, connect requests.ConnectAPI) error {
-	if remediationAction.Restart {
-		restartURL := generateRemediationActionURL(connect, remediationAction.ConnectorName, nil)
-		return makeActionRequest(ctx, connect, restartURL)
-	} else {
-		for _, taskID := range remediationAction.TaskIDsToBeRestarted {
-			restartURL := generateRemediationActionURL(connect, remediationAction.ConnectorName, &taskID)
-			err := makeActionRequest(ctx, connect, restartURL)
-			if err != nil {
-				return err
-			}
-		}
+	requestURL, err := generateRemediationActionURL(connect, remediationAction)
+	if err != nil {
+		return err
 	}
-	return nil
+
+	return makeActionRequest(ctx, connect, requestURL)
 }
 
 func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, requestURL string) error {

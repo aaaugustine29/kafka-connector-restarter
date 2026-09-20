@@ -22,7 +22,7 @@ func Poll(ctx context.Context, config environment.Configuration) {
 		BaseURL:    config.ConnectConfig.URL,
 		Auth:       config.ConnectConfig.AuthConfig,
 	}
-	backoffFilterer := backoff.BackoffFilterer{
+	backoffFilter := backoff.BackoffFilter{
 		BackoffConfig:            config.PollingBehavior.Backoff,
 		ConnectorBackoffStatuses: map[string]backoff.ConnectorBackoffStatus{},
 	}
@@ -41,8 +41,8 @@ func Poll(ctx context.Context, config environment.Configuration) {
 				continue
 			}
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
-			if backoffFilterer.BackoffConfig.Enabled {
-				connectorRemediationActions = backoffFilterer.FilterByBackoffs(connectorRemediationActions)
+			if backoffFilter.BackoffConfig.Enabled {
+				connectorRemediationActions = backoffFilter.FilterByBackoffs(connectorRemediationActions)
 			}
 			for _, remediationAction := range connectorRemediationActions {
 				if err := actions.TakeAction(ctx, remediationAction, connect); err != nil {

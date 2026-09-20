@@ -156,27 +156,27 @@ func TestFilterByBackoffs(t *testing.T) {
 		{
 			name: "actions without a prior attempt are retained",
 			actions: []actions.RemediationAction{
-				{ConnectorName: "source-connector", Restart: true},
-				{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{1, 2}},
+				{ConnectorName: "source-connector", Kind: actions.RestartConnector},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 1},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
 			},
 			expected: []actions.RemediationAction{
-				{ConnectorName: "source-connector", Restart: true},
-				{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{1, 2}},
+				{ConnectorName: "source-connector", Kind: actions.RestartConnector},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 1},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
 			},
 		},
 		{
-			name: "connector restart in the window is converted to a no-op",
+			name: "connector restart in the window is omitted",
 			statuses: map[string]ConnectorBackoffStatus{
 				"source-connector": {
 					LastConnectorRestartAttemptTime: recentAttempt,
 				},
 			},
 			actions: []actions.RemediationAction{
-				{ConnectorName: "source-connector", Restart: true},
+				{ConnectorName: "source-connector", Kind: actions.RestartConnector},
 			},
-			expected: []actions.RemediationAction{
-				{ConnectorName: "source-connector"},
-			},
+			expected: nil,
 		},
 		{
 			name: "only tasks outside their backoff window are retained",
@@ -188,10 +188,11 @@ func TestFilterByBackoffs(t *testing.T) {
 				},
 			},
 			actions: []actions.RemediationAction{
-				{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{1, 2}},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 1},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
 			},
 			expected: []actions.RemediationAction{
-				{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{2}},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
 			},
 		},
 		{
@@ -205,7 +206,8 @@ func TestFilterByBackoffs(t *testing.T) {
 				},
 			},
 			actions: []actions.RemediationAction{
-				{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{1, 2}},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 1},
+				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
 			},
 			expected: nil,
 		},
@@ -213,7 +215,7 @@ func TestFilterByBackoffs(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			filterer := BackoffFilterer{
+			filterer := BackoffFilter{
 				BackoffConfig:            config,
 				ConnectorBackoffStatuses: test.statuses,
 			}
