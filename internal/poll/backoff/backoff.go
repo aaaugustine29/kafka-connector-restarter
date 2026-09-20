@@ -18,33 +18,27 @@ type ConnectorBackoffStatus struct {
 	TaskBackoffStatuses             map[int]taskBackoffStatus
 }
 
-type BackoffFilterer struct {
+type BackoffFilter struct {
 	BackoffConfig            environment.BackoffConfiguration
 	ConnectorBackoffStatuses map[string]ConnectorBackoffStatus
 }
 
-func (backoffFilterer BackoffFilterer) FilterByBackoffs(originalRemediationActions []actions.RemediationAction) []actions.RemediationAction {
+func (backoffFilter BackoffFilter) FilterByBackoffs(originalRemediationActions []actions.RemediationAction) []actions.RemediationAction {
 	var filteredActions []actions.RemediationAction
 	for _, originalRemediationAction := range originalRemediationActions {
-		connectorBackoffStatus := backoffFilterer.ConnectorBackoffStatuses[originalRemediationAction.ConnectorName]
-		if originalRemediationAction.Restart {
-			if !isConnectorInBackoffWindow(backoffFilterer.BackoffConfig, connectorBackoffStatus) {
+		connectorBackoffStatus := backoffFilter.ConnectorBackoffStatuses[originalRemediationAction.ConnectorName]
+		if originalRemediationAction.Kind == actions.RestartConnector {
+			if !isConnectorInBackoffWindow(backoffFilter.BackoffConfig, connectorBackoffStatus) {
 				filteredActions = append(filteredActions, originalRemediationAction)
 			}
-		} else {
-			var filteredTaskIDsToBeRestarted []int
-			for _, originalTaskToBeRestarted := range originalRemediationAction.TaskIDsToBeRestarted {
-				taskBackoffStatus := backoffFilterer.ConnectorBackoffStatuses[originalRemediationAction.ConnectorName].TaskBackoffStatuses[originalTaskToBeRestarted]
-				if !isTaskInBackoffWindow(backoffFilterer.BackoffConfig, taskBackoffStatus) {
-					filteredTaskIDsToBeRestarted = append(filteredTaskIDsToBeRestarted, originalTaskToBeRestarted)
-				}
-			}
-			if len(filteredTaskIDsToBeRestarted) > 0 {
-				originalRemediationAction.TaskIDsToBeRestarted = filteredTaskIDsToBeRestarted
+		} else if originalRemediationAction.Kind == actions.RestartTask {
+			taskBackoffStatus := backoffFilter.ConnectorBackoffStatuses[originalRemediationAction.ConnectorName].TaskBackoffStatuses[originalRemediationAction.TaskID]
+			if !isTaskInBackoffWindow(backoffFilter.BackoffConfig, taskBackoffStatus) {
 				filteredActions = append(filteredActions, originalRemediationAction)
 			}
 		}
 	}
+
 	return filteredActions
 }
 

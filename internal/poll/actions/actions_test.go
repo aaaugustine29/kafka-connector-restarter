@@ -12,12 +12,12 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
-func TestDetermineAction(t *testing.T) {
+func TestDetermineActionsForConnector(t *testing.T) {
 	tests := []struct {
 		name         string
 		connector    status.ConnectorStatus
 		restartTasks bool
-		expected     RemediationAction
+		expected     []RemediationAction
 	}{
 		{
 			name: "unhealthy connector is restarted",
@@ -27,9 +27,11 @@ func TestDetermineAction(t *testing.T) {
 				Tasks:     []status.TaskStatus{{ID: 0, State: "FAILED"}},
 			},
 			restartTasks: false,
-			expected: RemediationAction{
-				ConnectorName: "source-connector",
-				Restart:       true,
+			expected: []RemediationAction{
+				{
+					ConnectorName: "source-connector",
+					Kind:          RestartConnector,
+				},
 			},
 		},
 		{
@@ -43,23 +45,31 @@ func TestDetermineAction(t *testing.T) {
 				},
 			},
 			restartTasks: true,
-			expected:     RemediationAction{ConnectorName: "sink-connector"},
+			expected:     nil,
 		},
 		{
-			name: "healthy connector restarts only failed tasks",
+			name: "healthy connector creates one action per failed task",
 			connector: status.ConnectorStatus{
 				Name:      "mixed-connector",
 				Connector: status.WorkerStatus{State: "RUNNING"},
 				Tasks: []status.TaskStatus{
 					{ID: 0, State: "RUNNING"},
 					{ID: 1, State: "FAILED"},
-					{ID: 2, State: "PAUSED"},
+					{ID: 2, State: "FAILED"},
 				},
 			},
 			restartTasks: true,
-			expected: RemediationAction{
-				ConnectorName:        "mixed-connector",
-				TaskIDsToBeRestarted: []int{1},
+			expected: []RemediationAction{
+				{
+					ConnectorName: "mixed-connector",
+					Kind:          RestartTask,
+					TaskID:        1,
+				},
+				{
+					ConnectorName: "mixed-connector",
+					Kind:          RestartTask,
+					TaskID:        2,
+				},
 			},
 		},
 		{
@@ -72,14 +82,14 @@ func TestDetermineAction(t *testing.T) {
 				},
 			},
 			restartTasks: false,
-			expected:     RemediationAction{ConnectorName: "mixed-connector"},
+			expected:     nil,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := DetermineAction(test.connector, test.restartTasks); !reflect.DeepEqual(got, test.expected) {
-				t.Fatalf("DetermineAction() = %#v, want %#v", got, test.expected)
+			if got := DetermineActionsForConnector(test.connector, test.restartTasks); !reflect.DeepEqual(got, test.expected) {
+				t.Fatalf("DetermineActionsForConnector() = %#v, want %#v", got, test.expected)
 			}
 		})
 	}
@@ -102,7 +112,7 @@ func TestTakeAction(t *testing.T) {
 	}{
 		{
 			name:   "OK connector restart is accepted",
-			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			action: RemediationAction{ConnectorName: "source-connector", Kind: RestartConnector},
 			expectedRequests: []expectedRequest{{
 				path:       "/connectors/source-connector/restart",
 				rawQuery:   "includeTasks=true&onlyFailed=true",
@@ -110,29 +120,21 @@ func TestTakeAction(t *testing.T) {
 			}},
 		},
 		{
-			name:   "accepted task restarts are accepted",
-			action: RemediationAction{ConnectorName: "sink-connector", TaskIDsToBeRestarted: []int{1, 3}},
-			expectedRequests: []expectedRequest{
-				{path: "/connectors/sink-connector/tasks/1/restart", statusCode: http.StatusAccepted},
-				{path: "/connectors/sink-connector/tasks/3/restart", statusCode: http.StatusAccepted},
-			},
-		},
-		{
-			name:   "connector restart takes priority over task restarts",
-			action: RemediationAction{ConnectorName: "source-connector", Restart: true, TaskIDsToBeRestarted: []int{1}},
+			name:   "accepted task restart is accepted",
+			action: RemediationAction{ConnectorName: "sink-connector", Kind: RestartTask, TaskID: 1},
 			expectedRequests: []expectedRequest{{
-				path:       "/connectors/source-connector/restart",
-				rawQuery:   "includeTasks=true&onlyFailed=true",
-				statusCode: http.StatusNoContent,
+				path:       "/connectors/sink-connector/tasks/1/restart",
+				statusCode: http.StatusAccepted,
 			}},
 		},
 		{
-			name:   "no remediation sends no request",
-			action: RemediationAction{ConnectorName: "healthy-connector"},
+			name:      "unknown action kind returns an error",
+			action:    RemediationAction{ConnectorName: "source-connector", Kind: ActionKind("unknown")},
+			wantError: true,
 		},
 		{
 			name:   "Basic Auth is sent",
-			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			action: RemediationAction{ConnectorName: "source-connector", Kind: RestartConnector},
 			expectedRequests: []expectedRequest{{
 				path:       "/connectors/source-connector/restart",
 				rawQuery:   "includeTasks=true&onlyFailed=true",
@@ -147,7 +149,7 @@ func TestTakeAction(t *testing.T) {
 		},
 		{
 			name:   "unauthorized returns an error",
-			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			action: RemediationAction{ConnectorName: "source-connector", Kind: RestartConnector},
 			expectedRequests: []expectedRequest{{
 				path:       "/connectors/source-connector/restart",
 				rawQuery:   "includeTasks=true&onlyFailed=true",
@@ -157,7 +159,7 @@ func TestTakeAction(t *testing.T) {
 		},
 		{
 			name:   "rebalance conflict returns an error",
-			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			action: RemediationAction{ConnectorName: "source-connector", Kind: RestartConnector},
 			expectedRequests: []expectedRequest{{
 				path:       "/connectors/source-connector/restart",
 				rawQuery:   "includeTasks=true&onlyFailed=true",
@@ -167,7 +169,7 @@ func TestTakeAction(t *testing.T) {
 		},
 		{
 			name:   "server error returns an error",
-			action: RemediationAction{ConnectorName: "source-connector", Restart: true},
+			action: RemediationAction{ConnectorName: "source-connector", Kind: RestartConnector},
 			expectedRequests: []expectedRequest{{
 				path:       "/connectors/source-connector/restart",
 				rawQuery:   "includeTasks=true&onlyFailed=true",
