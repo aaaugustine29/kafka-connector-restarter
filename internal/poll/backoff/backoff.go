@@ -30,8 +30,6 @@ func (backoffFilterer BackoffFilterer) FilterByBackoffs(originalRemediationActio
 		if originalRemediationAction.Restart {
 			if !isConnectorInBackoffWindow(backoffFilterer.BackoffConfig, connectorBackoffStatus) {
 				filteredActions = append(filteredActions, originalRemediationAction)
-			} else {
-				filteredActions = append(filteredActions, originalRemediationAction)
 			}
 		} else {
 			var filteredTaskIDsToBeRestarted []int
