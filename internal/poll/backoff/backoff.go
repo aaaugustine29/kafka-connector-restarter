@@ -1,58 +1,37 @@
 package backoff
 
 import (
+	"fmt"
 	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
-	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 )
 
-type taskBackoffStatus struct {
-	LastTaskRestartAttemptTime time.Time
-	TaskRestartAttempts        int
-}
+const (
+	ConnectorKeyFormat string = "%s"
+	TaskKeyFormat      string = "ConnectorName-%s_TaskID-%d"
+)
 
-type ConnectorBackoffStatus struct {
-	LastConnectorRestartAttemptTime time.Time
-	ConnectorRestartAttempts        int
-	TaskBackoffStatuses             map[int]taskBackoffStatus
+type BackoffStatus struct {
+	LastAttemptTime time.Time
+	Attempts        int
 }
 
 type BackoffFilter struct {
-	BackoffConfig            environment.BackoffConfiguration
-	ConnectorBackoffStatuses map[string]ConnectorBackoffStatus
+	BackoffConfig   environment.BackoffConfiguration
+	BackoffStatuses map[string]BackoffStatus
 }
 
-func (backoffFilter BackoffFilter) FilterByBackoffs(originalRemediationActions []actions.RemediationAction) []actions.RemediationAction {
-	var filteredActions []actions.RemediationAction
-	for _, originalRemediationAction := range originalRemediationActions {
-		connectorBackoffStatus := backoffFilter.ConnectorBackoffStatuses[originalRemediationAction.ConnectorName]
-		if originalRemediationAction.Kind == actions.RestartConnector {
-			if !isConnectorInBackoffWindow(backoffFilter.BackoffConfig, connectorBackoffStatus) {
-				filteredActions = append(filteredActions, originalRemediationAction)
-			}
-		} else if originalRemediationAction.Kind == actions.RestartTask {
-			taskBackoffStatus := backoffFilter.ConnectorBackoffStatuses[originalRemediationAction.ConnectorName].TaskBackoffStatuses[originalRemediationAction.TaskID]
-			if !isTaskInBackoffWindow(backoffFilter.BackoffConfig, taskBackoffStatus) {
-				filteredActions = append(filteredActions, originalRemediationAction)
-			}
-		}
-	}
+func (backoffFilter *BackoffFilter) IsInBackoffWindow(connectorName string, taskID *int) bool {
+	backoffStatus := backoffFilter.GetBackoffStatus(connectorName, taskID)
 
-	return filteredActions
-}
-
-func isConnectorInBackoffWindow(
-	backoffConfig environment.BackoffConfiguration,
-	backoffStatus ConnectorBackoffStatus,
-) bool {
 	nextBackoffTime := determineNextActionTime(
-		backoffStatus.LastConnectorRestartAttemptTime,
-		backoffConfig.BaseDelay,
-		backoffStatus.ConnectorRestartAttempts,
-		backoffConfig.Exponential,
+		backoffStatus.LastAttemptTime,
+		backoffFilter.BackoffConfig.BaseDelay,
+		backoffStatus.Attempts,
+		backoffFilter.BackoffConfig.Exponential,
 	)
-	if backoffStatus.LastConnectorRestartAttemptTime.IsZero() {
+	if backoffStatus.LastAttemptTime.IsZero() {
 		return false
 	} else if time.Now().Before(nextBackoffTime) {
 		return true
@@ -61,23 +40,10 @@ func isConnectorInBackoffWindow(
 	}
 }
 
-func isTaskInBackoffWindow(
-	backoffConfig environment.BackoffConfiguration,
-	backoffStatus taskBackoffStatus,
-) bool {
-	nextBackoffTime := determineNextActionTime(
-		backoffStatus.LastTaskRestartAttemptTime,
-		backoffConfig.BaseDelay,
-		backoffStatus.TaskRestartAttempts,
-		backoffConfig.Exponential,
-	)
-	if backoffStatus.LastTaskRestartAttemptTime.IsZero() {
-		return false
-	} else if time.Now().Before(nextBackoffTime) {
-		return true
-	} else {
-		return false
-	}
+func (backoffFilter *BackoffFilter) GetBackoffStatus(
+	connectorName string, taskID *int,
+) BackoffStatus {
+	return backoffFilter.BackoffStatuses[getKey(connectorName, taskID)]
 }
 
 func determineNextActionTime(
@@ -91,5 +57,13 @@ func determineNextActionTime(
 		return nextActionTime.Add(baseDelay * time.Duration(1<<(attempts)))
 	} else {
 		return nextActionTime.Add(baseDelay)
+	}
+}
+
+func getKey(connectorName string, taskID *int) string {
+	if taskID == nil {
+		return fmt.Sprintf(ConnectorKeyFormat, connectorName)
+	} else {
+		return fmt.Sprintf(TaskKeyFormat, connectorName, *taskID)
 	}
 }

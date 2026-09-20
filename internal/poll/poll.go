@@ -23,8 +23,8 @@ func Poll(ctx context.Context, config environment.Configuration) {
 		Auth:       config.ConnectConfig.AuthConfig,
 	}
 	backoffFilter := backoff.BackoffFilter{
-		BackoffConfig:            config.PollingBehavior.Backoff,
-		ConnectorBackoffStatuses: map[string]backoff.ConnectorBackoffStatus{},
+		BackoffConfig:   config.PollingBehavior.Backoff,
+		BackoffStatuses: map[string]backoff.BackoffStatus{},
 	}
 
 	ticker := time.NewTicker(config.PollingBehavior.Interval)
@@ -42,7 +42,7 @@ func Poll(ctx context.Context, config environment.Configuration) {
 			}
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
 			if backoffFilter.BackoffConfig.Enabled {
-				connectorRemediationActions = backoffFilter.FilterByBackoffs(connectorRemediationActions)
+				connectorRemediationActions = FilterByBackoffs(backoffFilter, connectorRemediationActions)
 			}
 			for _, remediationAction := range connectorRemediationActions {
 				if err := actions.TakeAction(ctx, remediationAction, connect); err != nil {
@@ -51,4 +51,22 @@ func Poll(ctx context.Context, config environment.Configuration) {
 			}
 		}
 	}
+}
+
+func FilterByBackoffs(backoffFilter backoff.BackoffFilter, originalActions []actions.RemediationAction) []actions.RemediationAction {
+	var filteredActions []actions.RemediationAction
+	for _, action := range originalActions {
+		switch action.Kind {
+		case actions.RestartConnector:
+			if !backoffFilter.IsInBackoffWindow(action.ConnectorName, nil) {
+				filteredActions = append(filteredActions, action)
+			}
+
+		case actions.RestartTask:
+			if !backoffFilter.IsInBackoffWindow(action.ConnectorName, &action.TaskID) {
+				filteredActions = append(filteredActions, action)
+			}
+		}
+	}
+	return filteredActions
 }

@@ -2,7 +2,6 @@ package actions
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -70,8 +69,8 @@ func generateRemediationActionURL(connect requests.ConnectAPI, action Remediatio
 	} else if action.Kind == RestartTask {
 		return connect.BaseURL + fmt.Sprintf(defaultTaskRestartPath, action.ConnectorName, action.TaskID), nil
 	} else {
-		return "", errors.New(fmt.Sprintf("While taking action: Unknown action kind: %s for connector %s or task %d\n",
-			action.Kind, action.ConnectorName, action.TaskID))
+		return "", fmt.Errorf("While taking action: Unknown action kind: %s for connector %s or task %d\n",
+			action.Kind, action.ConnectorName, action.TaskID)
 	}
 }
 
