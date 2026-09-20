@@ -1,9 +1,34 @@
 package environment
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 )
+
+func TestLoadLoggingConfiguration(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		expected slog.Level
+	}{
+		{name: "unset uses default", expected: DefaultLogLevel},
+		{name: "invalid uses default", value: "verbose", expected: DefaultLogLevel},
+		{name: "debug level is loaded", value: "debug", expected: slog.LevelDebug},
+		{name: "warning level is loaded", value: "warn", expected: slog.LevelWarn},
+		{name: "error level is loaded", value: "error", expected: slog.LevelError},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(LogLevelEnv, test.value)
+
+			if got := LoadLoggingConfiguration().Level; got != test.expected {
+				t.Fatalf("LoadLoggingConfiguration().Level = %v, want %v", got, test.expected)
+			}
+		})
+	}
+}
 
 func TestLoadPollingInterval(t *testing.T) {
 	tests := []struct {

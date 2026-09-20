@@ -1,6 +1,9 @@
 package environment
 
-import "time"
+import (
+	"log/slog"
+	"time"
+)
 
 const (
 	DefaultPollingInterval                  = 10 * time.Second
@@ -13,4 +16,5 @@ const (
 	DefaultConnectHost                      = "localhost"
 	DefaultConnectPort                      = "8083"
 	DefaultConnectSecureHTTP                = false
+	DefaultLogLevel                         = slog.LevelInfo
 )
