@@ -1,12 +1,10 @@
 package backoff
 
 import (
-	"reflect"
 	"testing"
 	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
-	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 )
 
 func TestDetermineNextActionTime(t *testing.T) {
@@ -53,176 +51,86 @@ func TestDetermineNextActionTime(t *testing.T) {
 	}
 }
 
-func TestIsConnectorInBackoffWindow(t *testing.T) {
+func TestGetBackoffStatus(t *testing.T) {
+	taskID := 3
+	connectorStatus := BackoffStatus{Attempts: 1}
+	taskStatus := BackoffStatus{Attempts: 2}
+	filter := BackoffFilter{
+		BackoffStatuses: map[string]BackoffStatus{
+			getKey("source-connector", nil):   connectorStatus,
+			getKey("sink-connector", &taskID): taskStatus,
+		},
+	}
+
+	if got := filter.GetBackoffStatus("source-connector", nil); got != connectorStatus {
+		t.Fatalf("GetBackoffStatus() = %#v, want %#v", got, connectorStatus)
+	}
+	if got := filter.GetBackoffStatus("sink-connector", &taskID); got != taskStatus {
+		t.Fatalf("GetBackoffStatus() = %#v, want %#v", got, taskStatus)
+	}
+}
+
+func TestIsInBackoffWindow(t *testing.T) {
 	backoffConfig := environment.BackoffConfiguration{
 		BaseDelay: time.Hour,
 	}
 
 	tests := []struct {
 		name     string
-		config   environment.BackoffConfiguration
-		status   ConnectorBackoffStatus
+		isTask   bool
+		status   BackoffStatus
 		expected bool
 	}{
 		{
-			name:     "no prior restart permits a restart",
-			config:   backoffConfig,
-			status:   ConnectorBackoffStatus{},
+			name:     "no prior restart permits an action",
 			expected: false,
 		},
 		{
-			name:   "recent restart remains in the backoff window",
-			config: backoffConfig,
-			status: ConnectorBackoffStatus{
-				LastConnectorRestartAttemptTime: time.Now().Add(-30 * time.Minute),
-			},
+			name:     "recent connector restart remains in the backoff window",
+			status:   BackoffStatus{LastAttemptTime: time.Now().Add(-30 * time.Minute)},
 			expected: true,
 		},
 		{
-			name:   "expired backoff window permits a restart",
-			config: backoffConfig,
-			status: ConnectorBackoffStatus{
-				LastConnectorRestartAttemptTime: time.Now().Add(-2 * time.Hour),
-			},
+			name:     "expired connector backoff window permits an action",
+			status:   BackoffStatus{LastAttemptTime: time.Now().Add(-2 * time.Hour)},
 			expected: false,
+		},
+		{
+			name:     "recent task restart remains in the backoff window",
+			isTask:   true,
+			status:   BackoffStatus{LastAttemptTime: time.Now().Add(-30 * time.Minute)},
+			expected: true,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := isConnectorInBackoffWindow(test.config, test.status); got != test.expected {
-				t.Fatalf("isConnectorInBackoffWindow() = %t, want %t", got, test.expected)
+			var taskID *int
+			if test.isTask {
+				id := 1
+				taskID = &id
+			}
+
+			filter := BackoffFilter{
+				BackoffConfig: backoffConfig,
+				BackoffStatuses: map[string]BackoffStatus{
+					getKey("connector", taskID): test.status,
+				},
+			}
+			if got := filter.IsInBackoffWindow("connector", taskID); got != test.expected {
+				t.Fatalf("IsInBackoffWindow() = %t, want %t", got, test.expected)
 			}
 		})
 	}
 }
 
-func TestIsTaskInBackoffWindow(t *testing.T) {
-	backoffConfig := environment.BackoffConfiguration{
-		BaseDelay: time.Hour,
+func TestGetKey(t *testing.T) {
+	taskID := 3
+
+	if got := getKey("source-connector", nil); got != "source-connector" {
+		t.Fatalf("getKey() = %q, want source-connector", got)
 	}
-
-	tests := []struct {
-		name     string
-		config   environment.BackoffConfiguration
-		status   taskBackoffStatus
-		expected bool
-	}{
-		{
-			name:     "no prior task restart permits a restart",
-			config:   backoffConfig,
-			status:   taskBackoffStatus{},
-			expected: false,
-		},
-		{
-			name:   "recent task restart remains in the backoff window",
-			config: backoffConfig,
-			status: taskBackoffStatus{
-				LastTaskRestartAttemptTime: time.Now().Add(-30 * time.Minute),
-			},
-			expected: true,
-		},
-		{
-			name:   "expired task backoff window permits a restart",
-			config: backoffConfig,
-			status: taskBackoffStatus{
-				LastTaskRestartAttemptTime: time.Now().Add(-2 * time.Hour),
-			},
-			expected: false,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := isTaskInBackoffWindow(test.config, test.status); got != test.expected {
-				t.Fatalf("isTaskInBackoffWindow() = %t, want %t", got, test.expected)
-			}
-		})
-	}
-}
-
-func TestFilterByBackoffs(t *testing.T) {
-	config := environment.BackoffConfiguration{
-		BaseDelay: time.Hour,
-	}
-	recentAttempt := time.Now().Add(-30 * time.Minute)
-
-	tests := []struct {
-		name     string
-		statuses map[string]ConnectorBackoffStatus
-		actions  []actions.RemediationAction
-		expected []actions.RemediationAction
-	}{
-		{
-			name: "actions without a prior attempt are retained",
-			actions: []actions.RemediationAction{
-				{ConnectorName: "source-connector", Kind: actions.RestartConnector},
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 1},
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
-			},
-			expected: []actions.RemediationAction{
-				{ConnectorName: "source-connector", Kind: actions.RestartConnector},
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 1},
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
-			},
-		},
-		{
-			name: "connector restart in the window is omitted",
-			statuses: map[string]ConnectorBackoffStatus{
-				"source-connector": {
-					LastConnectorRestartAttemptTime: recentAttempt,
-				},
-			},
-			actions: []actions.RemediationAction{
-				{ConnectorName: "source-connector", Kind: actions.RestartConnector},
-			},
-			expected: nil,
-		},
-		{
-			name: "only tasks outside their backoff window are retained",
-			statuses: map[string]ConnectorBackoffStatus{
-				"sink-connector": {
-					TaskBackoffStatuses: map[int]taskBackoffStatus{
-						1: {LastTaskRestartAttemptTime: recentAttempt},
-					},
-				},
-			},
-			actions: []actions.RemediationAction{
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 1},
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
-			},
-			expected: []actions.RemediationAction{
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
-			},
-		},
-		{
-			name: "action is omitted when all failed tasks are in their backoff windows",
-			statuses: map[string]ConnectorBackoffStatus{
-				"sink-connector": {
-					TaskBackoffStatuses: map[int]taskBackoffStatus{
-						1: {LastTaskRestartAttemptTime: recentAttempt},
-						2: {LastTaskRestartAttemptTime: recentAttempt},
-					},
-				},
-			},
-			actions: []actions.RemediationAction{
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 1},
-				{ConnectorName: "sink-connector", Kind: actions.RestartTask, TaskID: 2},
-			},
-			expected: nil,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			filterer := BackoffFilter{
-				BackoffConfig:            config,
-				ConnectorBackoffStatuses: test.statuses,
-			}
-
-			if got := filterer.FilterByBackoffs(test.actions); !reflect.DeepEqual(got, test.expected) {
-				t.Fatalf("FilterByBackoffs() = %#v, want %#v", got, test.expected)
-			}
-		})
+	if got := getKey("sink-connector", &taskID); got != "ConnectorName-sink-connector_TaskID-3" {
+		t.Fatalf("getKey() = %q, want ConnectorName-sink-connector_TaskID-3", got)
 	}
 }
