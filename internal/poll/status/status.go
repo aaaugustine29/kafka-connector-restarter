@@ -42,20 +42,18 @@ func FindConnectorStatuses(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("Error creating status request: %w", err)
+		return nil, fmt.Errorf("create connector status request: %w", err)
 	}
 
 	response, err := connect.HTTPClient.Do(request)
 
 	if err != nil {
-		return nil, fmt.Errorf("Error getting connector statuses: %w", err)
+		return nil, fmt.Errorf("retrieve connector statuses: %w", err)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf(
-			"Unexpected HTTP status code of %d with HTTP status of %s",
-			response.StatusCode, response.Status)
+		return nil, fmt.Errorf("retrieve connector statuses: unexpected HTTP status: %s", response.Status)
 	}
 
 	connectorStatuses, err := mapConnectorStatusResponse(response)

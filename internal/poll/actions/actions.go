@@ -3,7 +3,7 @@ package actions
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -43,7 +43,7 @@ func DetermineActionsForConnector(
 						Kind:          RestartTask,
 						TaskID:        task.ID,
 					})
-					log.Println("Task", task.ID, "of connector", status.Name, "appears to be unhealthy")
+					slog.Warn("failed task detected; scheduling restart", "connector", status.Name, "task_id", task.ID)
 				}
 			}
 		}
@@ -53,9 +53,9 @@ func DetermineActionsForConnector(
 			Kind:          RestartConnector,
 			TaskID:        0,
 		})
-		log.Println("Connector", status.Name, "is in a failed state.")
+		slog.Warn("failed connector detected; scheduling restart", "connector", status.Name)
 	} else {
-		log.Println("Connector", status.Name, "is in state", status.Connector.State, ". No action being taken.")
+		slog.Debug("connector is not eligible for remediation", "connector", status.Name, "state", status.Connector.State)
 	}
 	return actions
 }
@@ -75,7 +75,7 @@ func generateRemediationActionURL(connect requests.ConnectAPI, action Remediatio
 	case RestartTask:
 		return connect.BaseURL + fmt.Sprintf(defaultTaskRestartPath, action.ConnectorName, action.TaskID), nil
 	default:
-		return "", fmt.Errorf("While taking action: Unknown action kind: %s for connector %s or task %d\n",
+		return "", fmt.Errorf("unsupported remediation action %q for connector %q and task %d",
 			action.Kind, action.ConnectorName, action.TaskID)
 	}
 }
@@ -86,7 +86,13 @@ func TakeAction(ctx context.Context, remediationAction RemediationAction, connec
 		return err
 	}
 
-	return makeActionRequest(ctx, connect, requestURL)
+	slog.Info("taking remediation action", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
+	if err := makeActionRequest(ctx, connect, requestURL); err != nil {
+		return err
+	}
+
+	slog.Info("remediation action completed", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
+	return nil
 }
 
 func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, requestURL string) error {
@@ -97,19 +103,19 @@ func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, request
 	)
 
 	if err != nil {
-		return fmt.Errorf("Error creating remediation request: %w", err)
+		return fmt.Errorf("create remediation request for %q: %w", requestURL, err)
 	}
 
 	response, err := connect.HTTPClient.Do(request)
 
 	if err != nil {
-		return fmt.Errorf("Error taking action: %w", err)
+		return fmt.Errorf("send remediation request to %q: %w", requestURL, err)
 	}
 
 	defer response.Body.Close()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("Unexpected HTTP status code of %d with HTTP status of %s", response.StatusCode, response.Status)
+		return fmt.Errorf("remediation request to %q returned unexpected HTTP status: %s", requestURL, response.Status)
 	}
 	return nil
 }

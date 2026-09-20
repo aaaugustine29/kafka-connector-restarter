@@ -2,7 +2,7 @@ package poll
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -33,20 +33,22 @@ func Poll(ctx context.Context, config environment.Configuration) {
 	for {
 		select {
 		case <-ctx.Done():
+			slog.Info("polling stopped")
 			return
 		case <-ticker.C:
 			connectorStatuses, err := status.FindConnectorStatuses(ctx, connect)
 			if err != nil {
-				log.Printf("Error during poll cycle: %v", err)
+				slog.Error("poll cycle failed while retrieving connector statuses", "error", err)
 				continue
 			}
+			slog.Debug("connector statuses retrieved", "count", len(connectorStatuses))
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
 			if backoffFilter.BackoffConfig.Enabled {
 				connectorRemediationActions = FilterByBackoffs(backoffFilter, connectorRemediationActions)
 			}
 			for _, remediationAction := range connectorRemediationActions {
 				if err := actions.TakeAction(ctx, remediationAction, connect); err != nil {
-					// log.Printf("Error taking remediation action %s: %v", actionURL, err)
+					slog.Error("remediation action failed", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID, "error", err)
 				}
 			}
 		}
@@ -60,11 +62,15 @@ func FilterByBackoffs(backoffFilter backoff.BackoffFilter, originalActions []act
 		case actions.RestartConnector:
 			if !backoffFilter.IsInBackoffWindow(action.ConnectorName, nil) {
 				filteredActions = append(filteredActions, action)
+			} else {
+				slog.Debug("connector restart skipped because it is in the backoff window", "connector", action.ConnectorName)
 			}
 
 		case actions.RestartTask:
 			if !backoffFilter.IsInBackoffWindow(action.ConnectorName, &action.TaskID) {
 				filteredActions = append(filteredActions, action)
+			} else {
+				slog.Debug("task restart skipped because it is in the backoff window", "connector", action.ConnectorName, "task_id", action.TaskID)
 			}
 		}
 	}

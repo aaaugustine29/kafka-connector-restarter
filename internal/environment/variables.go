@@ -17,4 +17,6 @@ const (
 	ConnectHostEnv    = "RESTARTER_CONNECT_HOST"
 	ConnectPortEnv    = "RESTARTER_CONNECT_PORT"
 	ConnectSecureHTTP = "RESTARTER_CONNECT_HTTPS"
+
+	LogLevelEnv = "RESTARTER_LOG_LEVEL"
 )

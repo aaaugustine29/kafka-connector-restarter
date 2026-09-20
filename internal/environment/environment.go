@@ -1,11 +1,12 @@
 package environment
 
 import (
-	"log"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -43,6 +44,11 @@ type Configuration struct {
 	PollingBehavior     PollingBehavior
 	CommunicationConfig CommunicationConfiguration
 	ConnectConfig       ConnectConfiguration
+	LoggingConfig       LoggingConfiguration
+}
+
+type LoggingConfiguration struct {
+	Level slog.Level
 }
 
 func LoadBackoffConfiguration() BackoffConfiguration {
@@ -54,11 +60,11 @@ func LoadBackoffConfiguration() BackoffConfiguration {
 
 	backoffEnabledString := os.Getenv(RestartBackoffEnabled)
 	if backoffEnabledString == "" {
-		log.Println("No value of", RestartBackoffEnabled, "set; using default of", DefaultRestartBackoffEnabled)
+		slog.Debug("backoff setting is not configured; using default", "setting", RestartBackoffEnabled, "value", DefaultRestartBackoffEnabled)
 	} else {
 		backoffEnabled, err := strconv.ParseBool(backoffEnabledString)
 		if err != nil {
-			log.Println("Invalid", RestartBackoffEnabled, "value of", backoffEnabledString, "; using default of", DefaultRestartBackoffEnabled)
+			slog.Warn("invalid backoff setting; using default", "setting", RestartBackoffEnabled, "value", backoffEnabledString, "default", DefaultRestartBackoffEnabled)
 		} else {
 			backoffConfig.Enabled = backoffEnabled
 		}
@@ -66,11 +72,11 @@ func LoadBackoffConfiguration() BackoffConfiguration {
 
 	backoffBaseDelayString := os.Getenv(RestartBackoffBaseDelayMS)
 	if backoffBaseDelayString == "" {
-		log.Println("No value of", RestartBackoffBaseDelayMS, "set; using default of", DefaultRestartBackoffBaseDelay)
+		slog.Debug("backoff setting is not configured; using default", "setting", RestartBackoffBaseDelayMS, "value", DefaultRestartBackoffBaseDelay)
 	} else {
 		backoffBaseDelay, err := strconv.Atoi(backoffBaseDelayString)
 		if err != nil || backoffBaseDelay <= 0 {
-			log.Println("Invalid", RestartBackoffBaseDelayMS, "value of", backoffBaseDelayString, "; using default of", DefaultRestartBackoffBaseDelay)
+			slog.Warn("invalid backoff setting; using default", "setting", RestartBackoffBaseDelayMS, "value", backoffBaseDelayString, "default", DefaultRestartBackoffBaseDelay)
 		} else {
 			backoffConfig.BaseDelay = time.Duration(backoffBaseDelay) * time.Millisecond
 		}
@@ -78,11 +84,11 @@ func LoadBackoffConfiguration() BackoffConfiguration {
 
 	exponentialBackoffEnabledString := os.Getenv(RestartBackoffExponentialEnabled)
 	if exponentialBackoffEnabledString == "" {
-		log.Println("No value of", RestartBackoffExponentialEnabled, "set; using default of", DefaultRestartBackoffExponentialEnabled)
+		slog.Debug("backoff setting is not configured; using default", "setting", RestartBackoffExponentialEnabled, "value", DefaultRestartBackoffExponentialEnabled)
 	} else {
 		exponentialBackoffEnabled, err := strconv.ParseBool(exponentialBackoffEnabledString)
 		if err != nil {
-			log.Println("Invalid", RestartBackoffExponentialEnabled, "value of", exponentialBackoffEnabledString, "; using default of", DefaultRestartBackoffExponentialEnabled)
+			slog.Warn("invalid backoff setting; using default", "setting", RestartBackoffExponentialEnabled, "value", exponentialBackoffEnabledString, "default", DefaultRestartBackoffExponentialEnabled)
 		} else {
 			backoffConfig.Exponential = exponentialBackoffEnabled
 		}
@@ -95,7 +101,25 @@ func LoadConfig() Configuration {
 		PollingBehavior:     LoadPollingBehavior(),
 		CommunicationConfig: LoadCommunicationConfiguration(),
 		ConnectConfig:       LoadConnectConfiguration(),
+		LoggingConfig:       LoadLoggingConfiguration(),
 	}
+}
+
+func LoadLoggingConfiguration() LoggingConfiguration {
+	levelValue := os.Getenv(LogLevelEnv)
+	if levelValue == "" {
+		slog.Debug("log level is not configured; using default", "setting", LogLevelEnv, "value", DefaultLogLevel)
+		return LoggingConfiguration{Level: DefaultLogLevel}
+	}
+
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(strings.ToUpper(levelValue))); err != nil {
+		slog.Warn("invalid log level; using default", "setting", LogLevelEnv, "value", levelValue, "default", DefaultLogLevel)
+		return LoggingConfiguration{Level: DefaultLogLevel}
+	}
+
+	slog.Debug("log level configured", "level", level)
+	return LoggingConfiguration{Level: level}
 }
 
 func LoadPollingBehavior() PollingBehavior {
@@ -109,55 +133,55 @@ func LoadPollingBehavior() PollingBehavior {
 func LoadPollingInterval() time.Duration {
 	pollInterval := os.Getenv(PollingIntervalEnv)
 	if pollInterval == "" {
-		log.Println("No value of", PollingIntervalEnv, "set; using default of", DefaultPollingInterval)
+		slog.Debug("polling interval is not configured; using default", "setting", PollingIntervalEnv, "value", DefaultPollingInterval)
 		return DefaultPollingInterval
 	}
 
 	pollIntervalMS, err := strconv.Atoi(pollInterval)
 	if err != nil || pollIntervalMS <= 0 {
-		log.Println("Invalid", PollingIntervalEnv, "value of ", pollInterval, "; using default of", DefaultPollingInterval)
+		slog.Warn("invalid polling interval; using default", "setting", PollingIntervalEnv, "value", pollInterval, "default", DefaultPollingInterval)
 		return DefaultPollingInterval
 	}
 
 	pollingInterval := time.Duration(pollIntervalMS) * time.Millisecond
-	log.Println("Using", PollingIntervalEnv, "of", pollingInterval)
+	slog.Debug("polling interval configured", "value", pollingInterval)
 	return pollingInterval
 }
 
 func LoadRestartFailedTasks() bool {
 	restartFailedTasksString := os.Getenv(PollingRestartFailedTasks)
 	if restartFailedTasksString == "" {
-		log.Println("No value of", PollingRestartFailedTasks, "set; using default of", DefaultRestartFailedTasks)
+		slog.Debug("task restart setting is not configured; using default", "setting", PollingRestartFailedTasks, "value", DefaultRestartFailedTasks)
 		return DefaultRestartFailedTasks
 	}
 
 	restartFailedTasks, err := strconv.ParseBool(restartFailedTasksString)
 	if err != nil {
-		log.Println("Invalid", PollingRestartFailedTasks, "value of", restartFailedTasksString, "; using default of", DefaultRestartFailedTasks)
+		slog.Warn("invalid task restart setting; using default", "setting", PollingRestartFailedTasks, "value", restartFailedTasksString, "default", DefaultRestartFailedTasks)
 		return DefaultRestartFailedTasks
 	}
 
-	log.Println("Using", PollingRestartFailedTasks, "of", restartFailedTasks)
+	slog.Debug("task restart setting configured", "value", restartFailedTasks)
 	return restartFailedTasks
 }
 
 func LoadConnectConfiguration() ConnectConfiguration {
 	host := os.Getenv(ConnectHostEnv)
 	if host == "" {
-		log.Println("No value of", ConnectHostEnv, "set; using default of", DefaultConnectHost)
+		slog.Debug("Connect host is not configured; using default", "setting", ConnectHostEnv, "value", DefaultConnectHost)
 		host = DefaultConnectHost
 	}
 
 	port := os.Getenv(ConnectPortEnv)
 	if port == "" {
-		log.Println("No value of", ConnectPortEnv, "set; using default of", DefaultConnectPort)
+		slog.Debug("Connect port is not configured; using default", "setting", ConnectPortEnv, "value", DefaultConnectPort)
 		port = DefaultConnectPort
 	}
 
 	https := LoadHTTPS()
 	authConfig := LoadAuthConfiguration()
 	if authConfig.Enabled && !https {
-		log.Println("Basic authentication requires", ConnectSecureHTTP, "to be true. Authentication disabled.")
+		slog.Warn("basic authentication requires HTTPS; disabling authentication", "setting", ConnectSecureHTTP)
 		authConfig = AuthConfiguration{
 			Enabled:  DefaultConnectBasicAuthEnabled,
 			Username: "",
@@ -184,17 +208,17 @@ func LoadConnectConfiguration() ConnectConfiguration {
 func LoadHTTPS() bool {
 	httpsValue := os.Getenv(ConnectSecureHTTP)
 	if httpsValue == "" {
-		log.Println("No value of", ConnectSecureHTTP, "set; using default of", DefaultConnectSecureHTTP)
+		slog.Debug("HTTPS setting is not configured; using default", "setting", ConnectSecureHTTP, "value", DefaultConnectSecureHTTP)
 		return DefaultConnectSecureHTTP
 	}
 
 	https, err := strconv.ParseBool(httpsValue)
 	if err != nil {
-		log.Println("Invalid", ConnectSecureHTTP, "value of", httpsValue, "; using default of", DefaultConnectSecureHTTP)
+		slog.Warn("invalid HTTPS setting; using default", "setting", ConnectSecureHTTP, "value", httpsValue, "default", DefaultConnectSecureHTTP)
 		return DefaultConnectSecureHTTP
 	}
 
-	log.Println("Using", ConnectSecureHTTP, "of", https)
+	slog.Debug("HTTPS setting configured", "value", https)
 	return https
 }
 
@@ -205,12 +229,12 @@ func LoadCommunicationConfiguration() CommunicationConfiguration {
 	var err error
 
 	if requestTimeoutString == "" {
-		log.Println("No value of", requestTimeoutString, "set; using default of", DefaultHTTPRequestTimeout)
+		slog.Debug("HTTP request timeout is not configured; using default", "setting", HTTPRequestTimeout, "value", DefaultHTTPRequestTimeout)
 		requestTimeout = DefaultHTTPRequestTimeout
 	} else {
 		requestTimeoutInt, err = strconv.ParseInt(requestTimeoutString, 10, 64)
 		if err != nil || requestTimeoutInt <= 0 {
-			log.Println("Invalid", HTTPRequestTimeout, "value", requestTimeoutString, "; using default of", DefaultHTTPRequestTimeout)
+			slog.Warn("invalid HTTP request timeout; using default", "setting", HTTPRequestTimeout, "value", requestTimeoutString, "default", DefaultHTTPRequestTimeout)
 			requestTimeout = DefaultHTTPRequestTimeout
 		} else {
 			requestTimeout = time.Duration(requestTimeoutInt) * time.Millisecond
@@ -225,7 +249,7 @@ func LoadCommunicationConfiguration() CommunicationConfiguration {
 func LoadAuthConfiguration() AuthConfiguration {
 	authEnabledString := os.Getenv(ConnectBasicAuthEnabledEnv)
 	if authEnabledString == "" {
-		log.Println("Authentication not configured, defaulting to", DefaultConnectBasicAuthEnabled)
+		slog.Debug("basic authentication is not configured; using default", "setting", ConnectBasicAuthEnabledEnv, "value", DefaultConnectBasicAuthEnabled)
 		return AuthConfiguration{
 			Enabled:  DefaultConnectBasicAuthEnabled,
 			Username: "",
@@ -235,9 +259,9 @@ func LoadAuthConfiguration() AuthConfiguration {
 	authEnabled, err := strconv.ParseBool(authEnabledString)
 	if err != nil || authEnabled == false {
 		if err != nil {
-			log.Println("Error parsing", ConnectBasicAuthEnabledEnv, ", defaulting to", DefaultConnectBasicAuthEnabled)
+			slog.Warn("invalid basic authentication setting; using default", "setting", ConnectBasicAuthEnabledEnv, "value", authEnabledString, "default", DefaultConnectBasicAuthEnabled)
 		} else {
-			log.Println("Authentication disabled")
+			slog.Debug("basic authentication is disabled")
 		}
 		return AuthConfiguration{
 			Enabled:  DefaultConnectBasicAuthEnabled,
@@ -248,7 +272,7 @@ func LoadAuthConfiguration() AuthConfiguration {
 		authUsername := os.Getenv(ConnectBasicAuthUsernameEnv)
 		authPassword := os.Getenv(ConnectBasicAuthPasswordEnv)
 		if authUsername == "" || authPassword == "" {
-			log.Println("Authentication username or password is blank. Authentication disabled.")
+			slog.Warn("basic authentication credentials are incomplete; disabling authentication")
 			return AuthConfiguration{
 				Enabled:  DefaultConnectBasicAuthEnabled,
 				Username: "",
