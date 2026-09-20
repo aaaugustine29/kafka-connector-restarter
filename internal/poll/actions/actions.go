@@ -24,6 +24,11 @@ const (
 	RestartTask      ActionKind = "restart_task"
 )
 
+const (
+	defaultTaskRestartPath      = "/connectors/%s/tasks/%d/restart"
+	defaultConnectorRestartPath = "/connectors/%s/restart?includeTasks=true&onlyFailed=true"
+)
+
 func DetermineActionsForConnector(
 	status status.ConnectorStatus,
 	restartTasks bool,
@@ -64,11 +69,12 @@ func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, res
 }
 
 func generateRemediationActionURL(connect requests.ConnectAPI, action RemediationAction) (string, error) {
-	if action.Kind == RestartConnector {
+	switch action.Kind {
+	case RestartConnector:
 		return connect.BaseURL + fmt.Sprintf(defaultConnectorRestartPath, action.ConnectorName), nil
-	} else if action.Kind == RestartTask {
+	case RestartTask:
 		return connect.BaseURL + fmt.Sprintf(defaultTaskRestartPath, action.ConnectorName, action.TaskID), nil
-	} else {
+	default:
 		return "", fmt.Errorf("While taking action: Unknown action kind: %s for connector %s or task %d\n",
 			action.Kind, action.ConnectorName, action.TaskID)
 	}

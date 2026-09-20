@@ -9,6 +9,8 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
+const defaultConnectorStatusPath = "/connectors?expand=status"
+
 type TaskStatus struct {
 	ID       int    `json:"id"`
 	State    string `json:"state"`
