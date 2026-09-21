@@ -104,6 +104,23 @@ func TestUpdateBackoffStatus(t *testing.T) {
 	}
 }
 
+func TestResetBackoffStatus(t *testing.T) {
+	taskID := 3
+	filter := BackoffFilter{
+		BackoffStatuses: map[string]BackoffStatus{
+			getKey("source-connector", nil):   {Attempts: 1},
+			getKey("sink-connector", &taskID): {Attempts: 1},
+		},
+	}
+
+	filter.ResetBackoffStatus("source-connector", nil)
+	filter.ResetBackoffStatus("sink-connector", &taskID)
+
+	if len(filter.BackoffStatuses) != 0 {
+		t.Fatalf("backoff statuses = %#v, want empty map", filter.BackoffStatuses)
+	}
+}
+
 func TestIsInBackoffWindow(t *testing.T) {
 	backoffConfig := environment.BackoffConfiguration{
 		BaseDelay: time.Hour,
