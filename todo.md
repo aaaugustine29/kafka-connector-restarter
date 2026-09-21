@@ -1,7 +1,6 @@
 - have takeAction return some result with the action time, and other stuff like the response code.
 - Add something configurable like "RESTART_STATES" where you list the restart states that count as needing a restart, and have a default
 - Record the times when action is taken during takeAction
-- Also, connectAPI shouldn't be in status. Maybe we need some extra thing like utils?
-- Refactor so urls are generated within the takeAction, no reason to pass urls around.
+- Can we somehow like schedule restarts, and have a thread just constantly update a set of statuses that are 
 - refactor defaults so that we can just return default values as structs when something isn't set
 - audit pass by value/reference
