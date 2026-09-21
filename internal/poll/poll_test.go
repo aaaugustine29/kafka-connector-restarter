@@ -9,6 +9,7 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/backoff"
+	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 )
 
 func TestFilterByBackoffs(t *testing.T) {
@@ -72,5 +73,43 @@ func TestFilterByBackoffs(t *testing.T) {
 				t.Fatalf("FilterByBackoffs() = %#v, want %#v", got, test.expected)
 			}
 		})
+	}
+}
+
+func TestResetBackoffsForHealthyStatuses(t *testing.T) {
+	filter := backoff.BackoffFilter{
+		BackoffStatuses: map[string]backoff.BackoffStatus{
+			"healthy-connector": {Attempts: 1},
+			fmt.Sprintf(backoff.TaskKeyFormat, "healthy-connector", 1): {Attempts: 1},
+			fmt.Sprintf(backoff.TaskKeyFormat, "healthy-connector", 2): {Attempts: 1},
+			"failed-connector": {Attempts: 1},
+			fmt.Sprintf(backoff.TaskKeyFormat, "failed-connector", 1): {Attempts: 1},
+		},
+	}
+	connectorStatuses := map[string]status.ConnectorStatus{
+		"healthy-connector": {
+			Name:      "healthy-connector",
+			Connector: status.WorkerStatus{State: "RUNNING"},
+			Tasks: []status.TaskStatus{
+				{ID: 1, State: "RUNNING"},
+				{ID: 2, State: "FAILED"},
+			},
+		},
+		"failed-connector": {
+			Name:      "failed-connector",
+			Connector: status.WorkerStatus{State: "FAILED"},
+			Tasks:     []status.TaskStatus{{ID: 1, State: "FAILED"}},
+		},
+	}
+
+	resetBackoffsForHealthyStatuses(&filter, connectorStatuses)
+
+	expected := map[string]backoff.BackoffStatus{
+		fmt.Sprintf(backoff.TaskKeyFormat, "healthy-connector", 2): {Attempts: 1},
+		"failed-connector": {Attempts: 1},
+		fmt.Sprintf(backoff.TaskKeyFormat, "failed-connector", 1): {Attempts: 1},
+	}
+	if !reflect.DeepEqual(filter.BackoffStatuses, expected) {
+		t.Fatalf("backoff statuses = %#v, want %#v", filter.BackoffStatuses, expected)
 	}
 }

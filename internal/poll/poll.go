@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/environment"
@@ -41,7 +42,9 @@ func Poll(ctx context.Context, config environment.Configuration) {
 				slog.Error("poll cycle failed while retrieving connector statuses", "error", err)
 				continue
 			}
+
 			slog.Debug("connector statuses retrieved", "count", len(connectorStatuses))
+			resetBackoffsForHealthyStatuses(&backoffFilter, connectorStatuses)
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
 			if backoffFilter.BackoffConfig.Enabled {
 				connectorRemediationActions = FilterByBackoffs(backoffFilter, connectorRemediationActions)
@@ -61,6 +64,20 @@ func Poll(ctx context.Context, config environment.Configuration) {
 						slog.Error("unsupported remediation action", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
 					}
 				}
+			}
+		}
+	}
+}
+
+func resetBackoffsForHealthyStatuses(backoffFilter *backoff.BackoffFilter, connectorStatuses map[string]status.ConnectorStatus) {
+	for _, connectorStatus := range connectorStatuses {
+		if strings.EqualFold(connectorStatus.Connector.State, "RUNNING") {
+			backoffFilter.ResetBackoffStatus(connectorStatus.Name, nil)
+		}
+
+		for _, taskStatus := range connectorStatus.Tasks {
+			if strings.EqualFold(taskStatus.State, "RUNNING") {
+				backoffFilter.ResetBackoffStatus(connectorStatus.Name, &taskStatus.ID)
 			}
 		}
 	}

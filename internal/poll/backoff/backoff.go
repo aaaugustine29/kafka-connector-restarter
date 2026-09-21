@@ -30,6 +30,11 @@ func (backoffFilter *BackoffFilter) UpdateBackoffStatus(attemptTime time.Time, c
 	backoffFilter.BackoffStatuses[key] = status
 }
 
+func (backoffFilter *BackoffFilter) ResetBackoffStatus(connectorName string, taskID *int) {
+	key := getKey(connectorName, taskID)
+	delete(backoffFilter.BackoffStatuses, key)
+}
+
 func (backoffFilter *BackoffFilter) IsInBackoffWindow(connectorName string, taskID *int) bool {
 	backoffStatus := backoffFilter.getBackoffStatus(connectorName, taskID)
 
