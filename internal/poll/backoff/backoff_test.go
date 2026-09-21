@@ -62,11 +62,38 @@ func TestGetBackoffStatus(t *testing.T) {
 		},
 	}
 
-	if got := filter.GetBackoffStatus("source-connector", nil); got != connectorStatus {
-		t.Fatalf("GetBackoffStatus() = %#v, want %#v", got, connectorStatus)
+	if got := filter.getBackoffStatus("source-connector", nil); got != connectorStatus {
+		t.Fatalf("getBackoffStatus() = %#v, want %#v", got, connectorStatus)
 	}
-	if got := filter.GetBackoffStatus("sink-connector", &taskID); got != taskStatus {
-		t.Fatalf("GetBackoffStatus() = %#v, want %#v", got, taskStatus)
+	if got := filter.getBackoffStatus("sink-connector", &taskID); got != taskStatus {
+		t.Fatalf("getBackoffStatus() = %#v, want %#v", got, taskStatus)
+	}
+}
+
+func TestUpdateBackoffStatus(t *testing.T) {
+	firstAttempt := time.Date(2026, time.September, 20, 12, 0, 0, 0, time.UTC)
+	secondAttempt := firstAttempt.Add(time.Minute)
+	taskID := 3
+	filter := BackoffFilter{
+		BackoffStatuses: map[string]BackoffStatus{},
+	}
+
+	filter.UpdateBackoffStatus(firstAttempt, "source-connector", nil)
+	filter.UpdateBackoffStatus(secondAttempt, "source-connector", nil)
+	filter.UpdateBackoffStatus(firstAttempt, "sink-connector", &taskID)
+
+	if got, want := filter.getBackoffStatus("source-connector", nil), (BackoffStatus{
+		LastAttemptTime: secondAttempt,
+		Attempts:        2,
+	}); got != want {
+		t.Fatalf("connector backoff status = %#v, want %#v", got, want)
+	}
+
+	if got, want := filter.getBackoffStatus("sink-connector", &taskID), (BackoffStatus{
+		LastAttemptTime: firstAttempt,
+		Attempts:        1,
+	}); got != want {
+		t.Fatalf("task backoff status = %#v, want %#v", got, want)
 	}
 }
 
