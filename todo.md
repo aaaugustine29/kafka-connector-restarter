@@ -1,4 +1,4 @@
-- I question whether we should change takeAction to where its a part of remediationAction, and have remediationAction be split up in some way so that if in the case of where we have to restart multiple tasks, but not the connector, they don't have to be done sequentially.
+- have takeAction return some result with the action time, and other stuff like the response code.
 - Add something configurable like "RESTART_STATES" where you list the restart states that count as needing a restart, and have a default
 - Record the times when action is taken during takeAction
 - Also, connectAPI shouldn't be in status. Maybe we need some extra thing like utils?

@@ -22,8 +22,16 @@ type BackoffFilter struct {
 	BackoffStatuses map[string]BackoffStatus
 }
 
+func (backoffFilter *BackoffFilter) UpdateBackoffStatus(attemptTime time.Time, connectorName string, taskID *int) {
+	key := getKey(connectorName, taskID)
+	status := backoffFilter.BackoffStatuses[key]
+	status.LastAttemptTime = attemptTime
+	status.Attempts++
+	backoffFilter.BackoffStatuses[key] = status
+}
+
 func (backoffFilter *BackoffFilter) IsInBackoffWindow(connectorName string, taskID *int) bool {
-	backoffStatus := backoffFilter.GetBackoffStatus(connectorName, taskID)
+	backoffStatus := backoffFilter.getBackoffStatus(connectorName, taskID)
 
 	nextBackoffTime := determineNextActionTime(
 		backoffStatus.LastAttemptTime,
@@ -40,7 +48,7 @@ func (backoffFilter *BackoffFilter) IsInBackoffWindow(connectorName string, task
 	}
 }
 
-func (backoffFilter *BackoffFilter) GetBackoffStatus(
+func (backoffFilter *BackoffFilter) getBackoffStatus(
 	connectorName string, taskID *int,
 ) BackoffStatus {
 	return backoffFilter.BackoffStatuses[getKey(connectorName, taskID)]
