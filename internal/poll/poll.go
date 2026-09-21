@@ -50,6 +50,14 @@ func Poll(ctx context.Context, config environment.Configuration) {
 				if err := actions.TakeAction(ctx, remediationAction, connect); err != nil {
 					slog.Error("remediation action failed", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID, "error", err)
 				}
+
+				if remediationAction.Kind == actions.RestartConnector {
+					backoffFilter.UpdateBackoffStatus(time.Now(), remediationAction.ConnectorName, nil)
+				} else if remediationAction.Kind == actions.RestartTask {
+					backoffFilter.UpdateBackoffStatus(time.Now(), remediationAction.ConnectorName, &remediationAction.TaskID)
+				} else {
+					slog.Error("You fill this in AI")
+				}
 			}
 		}
 	}
