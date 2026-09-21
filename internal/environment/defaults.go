@@ -10,6 +10,7 @@ const (
 	DefaultRestartFailedTasks               = true
 	DefaultRestartBackoffEnabled            = true
 	DefaultRestartBackoffBaseDelay          = 2 * DefaultPollingInterval
+	DefaultRestartBackoffMaxDelay           = 10 * time.Minute
 	DefaultRestartBackoffExponentialEnabled = true
 	DefaultConnectBasicAuthEnabled          = false
 	DefaultHTTPRequestTimeout               = 10 * time.Second

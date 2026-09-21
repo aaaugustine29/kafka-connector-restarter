@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
@@ -15,6 +16,12 @@ type RemediationAction struct {
 	ConnectorName string
 	Kind          ActionKind
 	TaskID        int
+}
+
+type RemediationActionResult struct {
+	RequestMade bool
+	AttemptedAt time.Time
+	StatusCode  int
 }
 
 type ActionKind string
@@ -80,22 +87,27 @@ func generateRemediationActionURL(connect requests.ConnectAPI, action Remediatio
 	}
 }
 
-func TakeAction(ctx context.Context, remediationAction RemediationAction, connect requests.ConnectAPI) error {
+func TakeAction(ctx context.Context, remediationAction RemediationAction, connect requests.ConnectAPI) (RemediationActionResult, error) {
 	requestURL, err := generateRemediationActionURL(connect, remediationAction)
 	if err != nil {
-		return err
+		return RemediationActionResult{
+			RequestMade: false,
+		}, err
 	}
 
 	slog.Info("taking remediation action", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
-	if err := makeActionRequest(ctx, connect, requestURL); err != nil {
-		return err
+	result, err := makeActionRequest(ctx, connect, requestURL)
+	if err != nil {
+		return result, err
 	}
 
 	slog.Info("remediation action completed", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
-	return nil
+	return result, nil
 }
 
-func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, requestURL string) error {
+func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, requestURL string) (RemediationActionResult, error) {
+	result := RemediationActionResult{}
+
 	request, err := connect.NewRequest(
 		ctx,
 		http.MethodPost,
@@ -103,19 +115,25 @@ func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, request
 	)
 
 	if err != nil {
-		return fmt.Errorf("create remediation request for %q: %w", requestURL, err)
+		result.RequestMade = false
+		return result, fmt.Errorf("create remediation request for %q: %w", requestURL, err)
 	}
 
+	result.RequestMade = true
+	result.AttemptedAt = time.Now()
 	response, err := connect.HTTPClient.Do(request)
 
 	if err != nil {
-		return fmt.Errorf("send remediation request to %q: %w", requestURL, err)
+		return result, fmt.Errorf("send remediation request to %q: %w", requestURL, err)
 	}
 
 	defer response.Body.Close()
 
+	result.StatusCode = response.StatusCode
+
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("remediation request to %q returned unexpected HTTP status: %s", requestURL, response.Status)
+		return result, fmt.Errorf("remediation request to %q returned unexpected HTTP status: %s", requestURL, response.Status)
 	}
-	return nil
+
+	return result, nil
 }

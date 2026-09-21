@@ -8,8 +8,9 @@ import (
 )
 
 func TestDetermineNextActionTime(t *testing.T) {
-	lastRestartTime := time.Date(2026, time.September, 15, 12, 0, 0, 0, time.UTC)
+	lastAttemptTime := time.Date(2026, time.September, 15, 12, 0, 0, 0, time.UTC)
 	baseDelay := time.Second
+	maxDelay := 5 * time.Second
 
 	tests := []struct {
 		name        string
@@ -20,31 +21,37 @@ func TestDetermineNextActionTime(t *testing.T) {
 		{
 			name:     "linear backoff uses the base delay",
 			attempts: 3,
-			expected: lastRestartTime.Add(baseDelay),
+			expected: lastAttemptTime.Add(baseDelay),
 		},
 		{
-			name:        "first exponential backoff uses the base delay",
-			attempts:    0,
-			exponential: true,
-			expected:    lastRestartTime.Add(baseDelay),
-		},
-		{
-			name:        "second exponential backoff doubles the base delay",
+			name:        "first recorded attempt uses the base delay",
 			attempts:    1,
 			exponential: true,
-			expected:    lastRestartTime.Add(2 * baseDelay),
+			expected:    lastAttemptTime.Add(baseDelay),
 		},
 		{
-			name:        "third exponential backoff quadruples the base delay",
+			name:        "second recorded attempt doubles the base delay",
 			attempts:    2,
 			exponential: true,
-			expected:    lastRestartTime.Add(4 * baseDelay),
+			expected:    lastAttemptTime.Add(2 * baseDelay),
+		},
+		{
+			name:        "third recorded attempt quadruples the base delay",
+			attempts:    3,
+			exponential: true,
+			expected:    lastAttemptTime.Add(4 * baseDelay),
+		},
+		{
+			name:        "exponential backoff does not exceed the maximum delay",
+			attempts:    4,
+			exponential: true,
+			expected:    lastAttemptTime.Add(maxDelay),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := determineNextActionTime(lastRestartTime, baseDelay, test.attempts, test.exponential); !got.Equal(test.expected) {
+			if got := determineNextActionTime(lastAttemptTime, baseDelay, maxDelay, test.attempts, test.exponential); !got.Equal(test.expected) {
 				t.Fatalf("determineNextActionTime() = %v, want %v", got, test.expected)
 			}
 		})
@@ -100,6 +107,7 @@ func TestUpdateBackoffStatus(t *testing.T) {
 func TestIsInBackoffWindow(t *testing.T) {
 	backoffConfig := environment.BackoffConfiguration{
 		BaseDelay: time.Hour,
+		MaxDelay:  time.Hour,
 	}
 
 	tests := []struct {

@@ -82,6 +82,7 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 		name        string
 		enabled     string
 		baseDelayMS string
+		maxDelayMS  string
 		exponential string
 		expected    BackoffConfiguration
 	}{
@@ -90,6 +91,7 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			expected: BackoffConfiguration{
 				Enabled:     DefaultRestartBackoffEnabled,
 				BaseDelay:   DefaultRestartBackoffBaseDelay,
+				MaxDelay:    DefaultRestartBackoffMaxDelay,
 				Exponential: DefaultRestartBackoffExponentialEnabled,
 			},
 		},
@@ -97,10 +99,12 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			name:        "valid values are loaded",
 			enabled:     "true",
 			baseDelayMS: "250",
+			maxDelayMS:  "1000",
 			exponential: "false",
 			expected: BackoffConfiguration{
 				Enabled:     true,
 				BaseDelay:   250 * time.Millisecond,
+				MaxDelay:    time.Second,
 				Exponential: false,
 			},
 		},
@@ -108,10 +112,12 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			name:        "disabled backoff retains the rest of its configuration",
 			enabled:     "false",
 			baseDelayMS: "250",
+			maxDelayMS:  "1000",
 			exponential: "false",
 			expected: BackoffConfiguration{
 				Enabled:     false,
 				BaseDelay:   250 * time.Millisecond,
+				MaxDelay:    time.Second,
 				Exponential: false,
 			},
 		},
@@ -119,10 +125,12 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			name:        "invalid values use defaults",
 			enabled:     "sometimes",
 			baseDelayMS: "not-a-number",
+			maxDelayMS:  "not-a-number",
 			exponential: "sometimes",
 			expected: BackoffConfiguration{
 				Enabled:     DefaultRestartBackoffEnabled,
 				BaseDelay:   DefaultRestartBackoffBaseDelay,
+				MaxDelay:    DefaultRestartBackoffMaxDelay,
 				Exponential: DefaultRestartBackoffExponentialEnabled,
 			},
 		},
@@ -132,6 +140,7 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			expected: BackoffConfiguration{
 				Enabled:     DefaultRestartBackoffEnabled,
 				BaseDelay:   DefaultRestartBackoffBaseDelay,
+				MaxDelay:    DefaultRestartBackoffMaxDelay,
 				Exponential: DefaultRestartBackoffExponentialEnabled,
 			},
 		},
@@ -141,6 +150,18 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			expected: BackoffConfiguration{
 				Enabled:     DefaultRestartBackoffEnabled,
 				BaseDelay:   DefaultRestartBackoffBaseDelay,
+				MaxDelay:    DefaultRestartBackoffMaxDelay,
+				Exponential: DefaultRestartBackoffExponentialEnabled,
+			},
+		},
+		{
+			name:        "maximum delay below the base delay uses the base delay",
+			baseDelayMS: "500",
+			maxDelayMS:  "250",
+			expected: BackoffConfiguration{
+				Enabled:     DefaultRestartBackoffEnabled,
+				BaseDelay:   500 * time.Millisecond,
+				MaxDelay:    500 * time.Millisecond,
 				Exponential: DefaultRestartBackoffExponentialEnabled,
 			},
 		},
@@ -150,6 +171,7 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(RestartBackoffEnabled, test.enabled)
 			t.Setenv(RestartBackoffBaseDelayMS, test.baseDelayMS)
+			t.Setenv(RestartBackoffMaxDelayMS, test.maxDelayMS)
 			t.Setenv(RestartBackoffExponentialEnabled, test.exponential)
 
 			if got := LoadBackoffConfiguration(); got != test.expected {
@@ -164,6 +186,7 @@ func TestLoadConfigIncludesPollingBehavior(t *testing.T) {
 	t.Setenv(PollingRestartFailedTasks, "false")
 	t.Setenv(RestartBackoffEnabled, "false")
 	t.Setenv(RestartBackoffBaseDelayMS, "500")
+	t.Setenv(RestartBackoffMaxDelayMS, "1000")
 	t.Setenv(RestartBackoffExponentialEnabled, "false")
 
 	expected := PollingBehavior{
@@ -172,6 +195,7 @@ func TestLoadConfigIncludesPollingBehavior(t *testing.T) {
 		Backoff: BackoffConfiguration{
 			Enabled:     false,
 			BaseDelay:   500 * time.Millisecond,
+			MaxDelay:    time.Second,
 			Exponential: false,
 		},
 	}
