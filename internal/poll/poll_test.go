@@ -1,8 +1,12 @@
 package poll
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -112,4 +116,121 @@ func TestResetBackoffsForHealthyStatuses(t *testing.T) {
 	if !reflect.DeepEqual(filter.BackoffStatuses, expected) {
 		t.Fatalf("backoff statuses = %#v, want %#v", filter.BackoffStatuses, expected)
 	}
+}
+
+func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
+	const failedStatuses = `{
+		"connector-a": {"status": {"name": "connector-a", "connector": {"state": "FAILED"}, "tasks": [], "type": "source"}},
+		"connector-b": {"status": {"name": "connector-b", "connector": {"state": "RUNNING"}, "tasks": [{"id": 2, "state": "FAILED"}], "type": "sink"}}
+	}`
+	const healthyStatuses = `{
+		"connector-a": {"status": {"name": "connector-a", "connector": {"state": "RUNNING"}, "tasks": [], "type": "source"}},
+		"connector-b": {"status": {"name": "connector-b", "connector": {"state": "RUNNING"}, "tasks": [{"id": 2, "state": "RUNNING"}], "type": "sink"}}
+	}`
+
+	type statusResponse struct {
+		code int
+		body string
+	}
+	requests := make(chan string, 16)
+	responses := make(chan statusResponse)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.RequestURI() == "/connectors?expand=status":
+			requests <- "GET"
+			select {
+			case response := <-responses:
+				w.WriteHeader(response.code)
+				_, _ = w.Write([]byte(response.body))
+			case <-r.Context().Done():
+			}
+		case r.Method == http.MethodPost:
+			requests <- r.URL.RequestURI()
+			if r.URL.Path == "/connectors/connector-a/restart" {
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusNoContent)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan struct{})
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Error("Poll did not stop after cancellation")
+		}
+		server.Close()
+	})
+
+	config := environment.Configuration{
+		ConnectConfig:       environment.ConnectConfiguration{URL: server.URL},
+		CommunicationConfig: environment.CommunicationConfiguration{RequestTimeout: time.Second},
+		PollingBehavior: environment.PollingBehavior{
+			Interval:           10 * time.Millisecond,
+			RestartFailedTasks: true,
+			Backoff: environment.BackoffConfiguration{
+				Enabled:   true,
+				BaseDelay: time.Hour,
+				MaxDelay:  time.Hour,
+			},
+		},
+	}
+	go func() {
+		Poll(ctx, config)
+		close(finished)
+	}()
+
+	readRequest := func() string {
+		t.Helper()
+		select {
+		case request := <-requests:
+			return request
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for a Connect API request")
+			return ""
+		}
+	}
+	if request := readRequest(); request != "GET" {
+		t.Fatalf("first request = %q, want GET", request)
+	}
+
+	checkCycle := func(name string, response statusResponse, expected []string) {
+		t.Helper()
+		select {
+		case responses <- response:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s: timed out sending status response", name)
+		}
+
+		var got []string
+		for {
+			request := readRequest()
+			if request == "GET" {
+				break // The next status request means this poll cycle has finished.
+			}
+			got = append(got, request)
+		}
+		sort.Strings(got)
+		sort.Strings(expected)
+		if !reflect.DeepEqual(got, expected) {
+			t.Fatalf("%s: restart requests = %v, want %v", name, got, expected)
+		}
+	}
+
+	restarts := []string{
+		"/connectors/connector-a/restart?includeTasks=true&onlyFailed=true",
+		"/connectors/connector-b/tasks/2/restart",
+	}
+	checkCycle("initial failure", statusResponse{http.StatusOK, failedStatuses}, restarts)
+	checkCycle("failed statuses remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
+	checkCycle("healthy statuses clear backoff", statusResponse{http.StatusOK, healthyStatuses}, nil)
+	checkCycle("new failures are restarted", statusResponse{http.StatusOK, failedStatuses}, restarts)
+	checkCycle("status retrieval error does not reset backoff", statusResponse{http.StatusInternalServerError, ""}, nil)
+	checkCycle("failures after retrieval error remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
 }
