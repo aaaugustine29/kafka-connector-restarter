@@ -47,16 +47,19 @@ func Poll(ctx context.Context, config environment.Configuration) {
 				connectorRemediationActions = FilterByBackoffs(backoffFilter, connectorRemediationActions)
 			}
 			for _, remediationAction := range connectorRemediationActions {
-				if err := actions.TakeAction(ctx, remediationAction, connect); err != nil {
+				result, err := actions.TakeAction(ctx, remediationAction, connect)
+				if err != nil {
 					slog.Error("remediation action failed", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID, "error", err)
 				}
-
-				if remediationAction.Kind == actions.RestartConnector {
-					backoffFilter.UpdateBackoffStatus(time.Now(), remediationAction.ConnectorName, nil)
-				} else if remediationAction.Kind == actions.RestartTask {
-					backoffFilter.UpdateBackoffStatus(time.Now(), remediationAction.ConnectorName, &remediationAction.TaskID)
-				} else {
-					slog.Error("You fill this in AI")
+				if result.RequestMade {
+					switch remediationAction.Kind {
+					case actions.RestartConnector:
+						backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, nil)
+					case actions.RestartTask:
+						backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, &remediationAction.TaskID)
+					default:
+						slog.Error("unsupported remediation action", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
+					}
 				}
 			}
 		}

@@ -6,6 +6,7 @@ const (
 
 	RestartBackoffEnabled            = "RESTARTER_RESTART_BACKOFF_ENABLED"
 	RestartBackoffBaseDelayMS        = "RESTARTER_RESTART_BACKOFF_BASE_DELAY_MS"
+	RestartBackoffMaxDelayMS         = "RESTARTER_RESTART_BACKOFF_MAX_DELAY_MS"
 	RestartBackoffExponentialEnabled = "RESTARTER_RESTART_BACKOFF_EXPONENTIAL_ENABLED"
 
 	ConnectBasicAuthEnabledEnv  = "RESTARTER_CONNECT_BASIC_AUTH_ENABLED"

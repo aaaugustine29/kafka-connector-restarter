@@ -36,6 +36,7 @@ func (backoffFilter *BackoffFilter) IsInBackoffWindow(connectorName string, task
 	nextBackoffTime := determineNextActionTime(
 		backoffStatus.LastAttemptTime,
 		backoffFilter.BackoffConfig.BaseDelay,
+		backoffFilter.BackoffConfig.MaxDelay,
 		backoffStatus.Attempts,
 		backoffFilter.BackoffConfig.Exponential,
 	)
@@ -55,17 +56,29 @@ func (backoffFilter *BackoffFilter) getBackoffStatus(
 }
 
 func determineNextActionTime(
-	lastRestartTime time.Time,
+	lastAttemptTime time.Time,
 	baseDelay time.Duration,
+	maxDelay time.Duration,
 	attempts int,
 	exponential bool,
 ) time.Time {
-	nextActionTime := lastRestartTime
-	if exponential {
-		return nextActionTime.Add(baseDelay * time.Duration(1<<(attempts)))
-	} else {
-		return nextActionTime.Add(baseDelay)
+	delay := baseDelay
+
+	if maxDelay > 0 && delay > maxDelay {
+		delay = maxDelay
 	}
+
+	if exponential {
+		for attempt := 1; attempt < attempts && delay < maxDelay; attempt++ {
+			if delay > maxDelay/2 {
+				delay = maxDelay
+				break
+			}
+			delay *= 2
+		}
+	}
+
+	return lastAttemptTime.Add(delay)
 }
 
 func getKey(connectorName string, taskID *int) string {

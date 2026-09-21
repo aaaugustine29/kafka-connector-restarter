@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -11,6 +12,12 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
+}
 
 func TestDetermineActionsForConnector(t *testing.T) {
 	tests := []struct {
@@ -219,13 +226,62 @@ func TestTakeAction(t *testing.T) {
 				BaseURL:    server.URL,
 				Auth:       test.auth,
 			}
-			err := TakeAction(context.Background(), test.action, connect)
+			result, err := TakeAction(context.Background(), test.action, connect)
 			if (err != nil) != test.wantError {
 				t.Fatalf("TakeAction() error = %v, want error = %t", err, test.wantError)
+			}
+
+			expectedRequestMade := len(test.expectedRequests) > 0
+			if result.RequestMade != expectedRequestMade {
+				t.Fatalf("TakeAction() RequestMade = %t, want %t", result.RequestMade, expectedRequestMade)
+			}
+
+			expectedStatusCode := 0
+			if expectedRequestMade {
+				expectedStatusCode = test.expectedRequests[0].statusCode
+			}
+			if result.StatusCode != expectedStatusCode {
+				t.Fatalf("TakeAction() StatusCode = %d, want %d", result.StatusCode, expectedStatusCode)
+			}
+
+			if expectedRequestMade && result.AttemptedAt.IsZero() {
+				t.Fatal("TakeAction() AttemptedAt is zero after making a request")
+			}
+			if !expectedRequestMade && !result.AttemptedAt.IsZero() {
+				t.Fatalf("TakeAction() AttemptedAt = %v, want zero time", result.AttemptedAt)
 			}
 			if requestIndex != len(test.expectedRequests) {
 				t.Fatalf("received %d requests, want %d", requestIndex, len(test.expectedRequests))
 			}
 		})
+	}
+}
+
+func TestTakeActionRecordsFailedRequest(t *testing.T) {
+	connect := requests.ConnectAPI{
+		HTTPClient: &http.Client{
+			Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("connection refused")
+			}),
+		},
+		BaseURL: "http://connect.example.test",
+	}
+
+	result, err := TakeAction(
+		context.Background(),
+		RemediationAction{ConnectorName: "source-connector", Kind: RestartConnector},
+		connect,
+	)
+	if err == nil {
+		t.Fatal("TakeAction() error = nil, want an error")
+	}
+	if !result.RequestMade {
+		t.Fatal("TakeAction() RequestMade = false, want true")
+	}
+	if result.AttemptedAt.IsZero() {
+		t.Fatal("TakeAction() AttemptedAt is zero after making a request")
+	}
+	if result.StatusCode != 0 {
+		t.Fatalf("TakeAction() StatusCode = %d, want 0", result.StatusCode)
 	}
 }

@@ -23,6 +23,7 @@ type AuthConfiguration struct {
 type BackoffConfiguration struct {
 	Enabled     bool
 	BaseDelay   time.Duration
+	MaxDelay    time.Duration
 	Exponential bool
 }
 
@@ -55,6 +56,7 @@ func LoadBackoffConfiguration() BackoffConfiguration {
 	backoffConfig := BackoffConfiguration{
 		Enabled:     DefaultRestartBackoffEnabled,
 		BaseDelay:   DefaultRestartBackoffBaseDelay,
+		MaxDelay:    DefaultRestartBackoffMaxDelay,
 		Exponential: DefaultRestartBackoffExponentialEnabled,
 	}
 
@@ -80,6 +82,23 @@ func LoadBackoffConfiguration() BackoffConfiguration {
 		} else {
 			backoffConfig.BaseDelay = time.Duration(backoffBaseDelay) * time.Millisecond
 		}
+	}
+
+	backoffMaxDelayString := os.Getenv(RestartBackoffMaxDelayMS)
+	if backoffMaxDelayString == "" {
+		slog.Debug("backoff setting is not configured; using default", "setting", RestartBackoffMaxDelayMS, "value", DefaultRestartBackoffMaxDelay)
+	} else {
+		backoffMaxDelay, err := strconv.Atoi(backoffMaxDelayString)
+		if err != nil || backoffMaxDelay <= 0 {
+			slog.Warn("invalid backoff setting; using default", "setting", RestartBackoffMaxDelayMS, "value", backoffMaxDelayString, "default", DefaultRestartBackoffMaxDelay)
+		} else {
+			backoffConfig.MaxDelay = time.Duration(backoffMaxDelay) * time.Millisecond
+		}
+	}
+
+	if backoffConfig.MaxDelay < backoffConfig.BaseDelay {
+		slog.Warn("backoff maximum delay is less than the base delay; using the base delay", "maximum_delay", backoffConfig.MaxDelay, "base_delay", backoffConfig.BaseDelay)
+		backoffConfig.MaxDelay = backoffConfig.BaseDelay
 	}
 
 	exponentialBackoffEnabledString := os.Getenv(RestartBackoffExponentialEnabled)
