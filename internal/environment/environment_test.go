@@ -4,6 +4,29 @@ import (
 	"log/slog"
 	"testing"
 	"time"
+
+	"entropicworks.com/kafka-connector-restarter/internal/config"
+)
+
+type (
+	AuthConfiguration    = config.AuthConfiguration
+	BackoffConfiguration = config.BackoffConfiguration
+	PollingBehavior      = config.PollingBehavior
+)
+
+const (
+	DefaultLogLevel                         = config.DefaultLogLevel
+	DefaultPollingInterval                  = config.DefaultPollingInterval
+	DefaultRestartFailedTasks               = config.DefaultRestartFailedTasks
+	DefaultRestartBackoffEnabled            = config.DefaultRestartBackoffEnabled
+	DefaultRestartBackoffBaseDelay          = config.DefaultRestartBackoffBaseDelay
+	DefaultRestartBackoffMaxDelay           = config.DefaultRestartBackoffMaxDelay
+	DefaultRestartBackoffExponentialEnabled = config.DefaultRestartBackoffExponentialEnabled
+	DefaultConnectBasicAuthEnabled          = config.DefaultConnectBasicAuthEnabled
+	DefaultHTTPRequestTimeout               = config.DefaultHTTPRequestTimeout
+	DefaultConnectHost                      = config.DefaultConnectAPIHost
+	DefaultConnectPort                      = config.DefaultConnectAPIPort
+	DefaultConnectSecureHTTP                = config.DefaultConnectAPISecureHTTP
 )
 
 func TestLoadLoggingConfiguration(t *testing.T) {

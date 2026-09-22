@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/config"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
@@ -113,7 +113,7 @@ func TestTakeAction(t *testing.T) {
 		name             string
 		action           RemediationAction
 		expectedRequests []expectedRequest
-		auth             environment.AuthConfiguration
+		auth             config.AuthConfiguration
 		expectedAuth     bool
 		wantError        bool
 	}{
@@ -147,7 +147,7 @@ func TestTakeAction(t *testing.T) {
 				rawQuery:   "includeTasks=true&onlyFailed=true",
 				statusCode: http.StatusAccepted,
 			}},
-			auth: environment.AuthConfiguration{
+			auth: config.AuthConfiguration{
 				Enabled:  true,
 				Username: "connect-user",
 				Password: "connect-password",

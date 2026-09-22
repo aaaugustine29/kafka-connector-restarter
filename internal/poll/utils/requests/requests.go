@@ -4,13 +4,13 @@ import (
 	"context"
 	"net/http"
 
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/config"
 )
 
 type ConnectAPI struct {
 	HTTPClient *http.Client
 	BaseURL    string
-	Auth       environment.AuthConfiguration
+	Auth       config.AuthConfiguration
 }
 
 func (connect ConnectAPI) NewRequest(ctx context.Context, method string, requestURL string) (*http.Request, error) {

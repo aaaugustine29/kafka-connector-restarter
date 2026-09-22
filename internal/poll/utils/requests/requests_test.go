@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"testing"
 
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/config"
 )
 
 func TestConnectAPINewRequestBasicAuth(t *testing.T) {
 	tests := []struct {
 		name     string
-		auth     environment.AuthConfiguration
+		auth     config.AuthConfiguration
 		expected bool
 	}{
 		{
@@ -20,7 +20,7 @@ func TestConnectAPINewRequestBasicAuth(t *testing.T) {
 		},
 		{
 			name: "enabled authentication adds credentials",
-			auth: environment.AuthConfiguration{
+			auth: config.AuthConfiguration{
 				Enabled:  true,
 				Username: "connect-user",
 				Password: "connect-password",
