@@ -44,12 +44,12 @@ func DefaultPollingBehavior() PollingBehavior {
 }
 
 func DefaultConnectAPIConfiguration() ConnectAPIConfiguration {
-	return NewConnectAPIConfiguration(
-		DefaultConnectAPIHost,
-		DefaultConnectAPIPort,
-		DefaultConnectAPISecureHTTP,
-		DefaultAuthConfiguration(),
-	)
+	return ConnectAPIConfiguration{
+		Host:       DefaultConnectAPIHost,
+		Port:       DefaultConnectAPIPort,
+		HTTPS:      DefaultConnectAPISecureHTTP,
+		AuthConfig: DefaultAuthConfiguration(),
+	}
 }
 
 func DefaultLoggingConfiguration() LoggingConfiguration {
