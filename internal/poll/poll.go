@@ -18,11 +18,7 @@ func Poll(ctx context.Context, configuration config.Configuration) {
 	var connectHTTPClient = &http.Client{
 		Timeout: configuration.CommunicationConfig.RequestTimeout,
 	}
-	connect := requests.ConnectAPI{
-		HTTPClient: connectHTTPClient,
-		BaseURL:    configuration.ConnectConfig.URL,
-		Auth:       configuration.ConnectConfig.AuthConfig,
-	}
+	connect := requests.NewConnectAPI(connectHTTPClient, configuration.ConnectConfig)
 	backoffFilter := backoff.BackoffFilter{
 		BackoffConfig:   configuration.PollingBehavior.Backoff,
 		BackoffStatuses: map[string]backoff.BackoffStatus{},

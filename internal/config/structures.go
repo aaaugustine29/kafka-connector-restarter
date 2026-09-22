@@ -2,8 +2,6 @@ package config
 
 import (
 	"log/slog"
-	"net"
-	"net/url"
 	"time"
 )
 
@@ -33,7 +31,6 @@ type PollingBehavior struct {
 type ConnectAPIConfiguration struct {
 	Host       string            `json:"host"`
 	Port       string            `json:"port"`
-	URL        string            `json:"url"`
 	HTTPS      bool              `json:"https"`
 	AuthConfig AuthConfiguration `json:"authConfig"`
 }
@@ -47,22 +44,4 @@ type Configuration struct {
 
 type LoggingConfiguration struct {
 	Level slog.Level `json:"level"`
-}
-
-func NewConnectAPIConfiguration(host, port string, https bool, authConfig AuthConfiguration) ConnectAPIConfiguration {
-	scheme := "http"
-	if https {
-		scheme = "https"
-	}
-
-	return ConnectAPIConfiguration{
-		Host:       host,
-		Port:       port,
-		HTTPS:      https,
-		AuthConfig: authConfig,
-		URL: (&url.URL{
-			Scheme: scheme,
-			Host:   net.JoinHostPort(host, port),
-		}).String(),
-	}
 }

@@ -236,14 +236,12 @@ func TestLoadConnectConfiguration(t *testing.T) {
 		expectedHost  string
 		expectedPort  string
 		expectedHTTPS bool
-		expectedURL   string
 	}{
 		{
 			name:          "unset uses defaults",
 			expectedHost:  DefaultConnectHost,
 			expectedPort:  DefaultConnectPort,
 			expectedHTTPS: DefaultConnectSecureHTTP,
-			expectedURL:   "http://localhost:8083",
 		},
 		{
 			name:          "configured host and port",
@@ -252,15 +250,13 @@ func TestLoadConnectConfiguration(t *testing.T) {
 			expectedHost:  "connect.example.test",
 			expectedPort:  "9090",
 			expectedHTTPS: false,
-			expectedURL:   "http://connect.example.test:9090",
 		},
 		{
-			name:          "HTTPS uses a secure URL",
+			name:          "HTTPS is loaded",
 			https:         "true",
 			expectedHost:  DefaultConnectHost,
 			expectedPort:  DefaultConnectPort,
 			expectedHTTPS: true,
-			expectedURL:   "https://localhost:8083",
 		},
 		{
 			name:          "invalid HTTPS value uses default",
@@ -268,16 +264,14 @@ func TestLoadConnectConfiguration(t *testing.T) {
 			expectedHost:  DefaultConnectHost,
 			expectedPort:  DefaultConnectPort,
 			expectedHTTPS: DefaultConnectSecureHTTP,
-			expectedURL:   "http://localhost:8083",
 		},
 		{
-			name:          "IPv6 host is formatted safely",
+			name:          "IPv6 host is loaded",
 			host:          "2001:db8::1",
 			port:          "8083",
 			expectedHost:  "2001:db8::1",
 			expectedPort:  "8083",
 			expectedHTTPS: false,
-			expectedURL:   "http://[2001:db8::1]:8083",
 		},
 	}
 
@@ -287,8 +281,8 @@ func TestLoadConnectConfiguration(t *testing.T) {
 			t.Setenv(ConnectPortEnv, test.port)
 			t.Setenv(ConnectSecureHTTP, test.https)
 
-			if got := LoadConnectConfiguration(); got.Host != test.expectedHost || got.Port != test.expectedPort || got.HTTPS != test.expectedHTTPS || got.URL != test.expectedURL {
-				t.Fatalf("LoadConnectConfiguration() = %#v, want host %q, port %q, HTTPS %t, URL %q", got, test.expectedHost, test.expectedPort, test.expectedHTTPS, test.expectedURL)
+			if got := LoadConnectConfiguration(); got.Host != test.expectedHost || got.Port != test.expectedPort || got.HTTPS != test.expectedHTTPS {
+				t.Fatalf("LoadConnectConfiguration() = %#v, want host %q, port %q, HTTPS %t", got, test.expectedHost, test.expectedPort, test.expectedHTTPS)
 			}
 		})
 	}

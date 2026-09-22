@@ -160,7 +160,12 @@ func LoadConnectConfiguration() config.ConnectAPIConfiguration {
 		slog.Warn("basic authentication requires HTTPS; disabling authentication", "setting", ConnectSecureHTTP)
 		authConfig = config.DefaultAuthConfiguration()
 	}
-	return config.NewConnectAPIConfiguration(host, port, https, authConfig)
+	return config.ConnectAPIConfiguration{
+		Host:       host,
+		Port:       port,
+		HTTPS:      https,
+		AuthConfig: authConfig,
+	}
 }
 
 func LoadHTTPS() bool {

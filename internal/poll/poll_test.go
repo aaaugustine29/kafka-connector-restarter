@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"sort"
 	"testing"
@@ -168,8 +169,17 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 		server.Close()
 	})
 
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+
 	pollConfig := config.Configuration{
-		ConnectConfig:       config.ConnectAPIConfiguration{URL: server.URL},
+		ConnectConfig: config.ConnectAPIConfiguration{
+			Host:  serverURL.Hostname(),
+			Port:  serverURL.Port(),
+			HTTPS: serverURL.Scheme == "https",
+		},
 		CommunicationConfig: config.CommunicationConfiguration{RequestTimeout: time.Second},
 		PollingBehavior: config.PollingBehavior{
 			Interval:           10 * time.Millisecond,

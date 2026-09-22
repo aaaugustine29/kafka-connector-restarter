@@ -18,11 +18,3 @@ func TestDefaultConfigurationMatchesComponentDefaults(t *testing.T) {
 		t.Fatalf("LoggingConfig = %#v, want %#v", got.LoggingConfig, DefaultLoggingConfiguration())
 	}
 }
-
-func TestDefaultConnectAPIConfigurationBuildsURL(t *testing.T) {
-	got := DefaultConnectAPIConfiguration()
-
-	if got.URL != "http://localhost:8083" {
-		t.Fatalf("URL = %q, want %q", got.URL, "http://localhost:8083")
-	}
-}
