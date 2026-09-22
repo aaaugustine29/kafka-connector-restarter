@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/config"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/backoff"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
@@ -18,7 +18,7 @@ import (
 
 func TestFilterByBackoffs(t *testing.T) {
 	recentAttempt := time.Now().Add(-30 * time.Minute)
-	config := environment.BackoffConfiguration{BaseDelay: time.Hour}
+	backoffConfig := config.BackoffConfiguration{BaseDelay: time.Hour}
 
 	tests := []struct {
 		name     string
@@ -69,7 +69,7 @@ func TestFilterByBackoffs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			filter := backoff.BackoffFilter{
-				BackoffConfig:   config,
+				BackoffConfig:   backoffConfig,
 				BackoffStatuses: test.statuses,
 			}
 
@@ -168,13 +168,13 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 		server.Close()
 	})
 
-	config := environment.Configuration{
-		ConnectConfig:       environment.ConnectConfiguration{URL: server.URL},
-		CommunicationConfig: environment.CommunicationConfiguration{RequestTimeout: time.Second},
-		PollingBehavior: environment.PollingBehavior{
+	pollConfig := config.Configuration{
+		ConnectConfig:       config.ConnectAPIConfiguration{URL: server.URL},
+		CommunicationConfig: config.CommunicationConfiguration{RequestTimeout: time.Second},
+		PollingBehavior: config.PollingBehavior{
 			Interval:           10 * time.Millisecond,
 			RestartFailedTasks: true,
-			Backoff: environment.BackoffConfiguration{
+			Backoff: config.BackoffConfiguration{
 				Enabled:   true,
 				BaseDelay: time.Hour,
 				MaxDelay:  time.Hour,
@@ -182,7 +182,7 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 		},
 	}
 	go func() {
-		Poll(ctx, config)
+		Poll(ctx, pollConfig)
 		close(finished)
 	}()
 

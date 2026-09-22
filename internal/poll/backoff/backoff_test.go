@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/config"
 )
 
 func TestDetermineNextActionTime(t *testing.T) {
@@ -122,7 +122,7 @@ func TestResetBackoffStatus(t *testing.T) {
 }
 
 func TestIsInBackoffWindow(t *testing.T) {
-	backoffConfig := environment.BackoffConfiguration{
+	backoffConfig := config.BackoffConfiguration{
 		BaseDelay: time.Hour,
 		MaxDelay:  time.Hour,
 	}

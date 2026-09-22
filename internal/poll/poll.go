@@ -7,28 +7,28 @@ import (
 	"strings"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/config"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/backoff"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
-func Poll(ctx context.Context, config environment.Configuration) {
+func Poll(ctx context.Context, configuration config.Configuration) {
 	var connectHTTPClient = &http.Client{
-		Timeout: config.CommunicationConfig.RequestTimeout,
+		Timeout: configuration.CommunicationConfig.RequestTimeout,
 	}
 	connect := requests.ConnectAPI{
 		HTTPClient: connectHTTPClient,
-		BaseURL:    config.ConnectConfig.URL,
-		Auth:       config.ConnectConfig.AuthConfig,
+		BaseURL:    configuration.ConnectConfig.URL,
+		Auth:       configuration.ConnectConfig.AuthConfig,
 	}
 	backoffFilter := backoff.BackoffFilter{
-		BackoffConfig:   config.PollingBehavior.Backoff,
+		BackoffConfig:   configuration.PollingBehavior.Backoff,
 		BackoffStatuses: map[string]backoff.BackoffStatus{},
 	}
 
-	ticker := time.NewTicker(config.PollingBehavior.Interval)
+	ticker := time.NewTicker(configuration.PollingBehavior.Interval)
 	defer ticker.Stop()
 
 	for {
@@ -45,7 +45,7 @@ func Poll(ctx context.Context, config environment.Configuration) {
 
 			slog.Debug("connector statuses retrieved", "count", len(connectorStatuses))
 			resetBackoffsForHealthyStatuses(&backoffFilter, connectorStatuses)
-			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, config.PollingBehavior.RestartFailedTasks)
+			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, configuration.PollingBehavior.RestartFailedTasks)
 			if backoffFilter.BackoffConfig.Enabled {
 				connectorRemediationActions = FilterByBackoffs(backoffFilter, connectorRemediationActions)
 			}

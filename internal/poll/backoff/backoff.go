@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
+	"entropicworks.com/kafka-connector-restarter/internal/config"
 )
 
 const (
@@ -18,7 +18,7 @@ type BackoffStatus struct {
 }
 
 type BackoffFilter struct {
-	BackoffConfig   environment.BackoffConfiguration
+	BackoffConfig   config.BackoffConfiguration
 	BackoffStatuses map[string]BackoffStatus
 }
 
