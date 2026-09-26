@@ -9,30 +9,30 @@ import (
 func TestManagerUpdateCommitsSingleValue(t *testing.T) {
 	manager := NewManager(DefaultConfiguration())
 
-	err := manager.Update(func(configuration *Configuration) error {
+	err := manager.UpdateConfiguration(func(configuration *Configuration) error {
 		configuration.CommunicationConfig.RequestTimeout = 2 * time.Second
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Update() error = %v", err)
+		t.Fatalf("UpdateConfiguration() error = %v", err)
 	}
-	if got := manager.Get().CommunicationConfig.RequestTimeout; got != 2*time.Second {
+	if got := manager.GetConfiguration().CommunicationConfig.RequestTimeout; got != 2*time.Second {
 		t.Fatalf("request timeout = %v, want %v", got, 2*time.Second)
 	}
 }
 
 func TestManagerUpdateRejectsChangeAtomically(t *testing.T) {
 	manager := NewManager(DefaultConfiguration())
-	before, changes := manager.Snapshot()
+	before, changes := manager.ConfigurationSnapshot()
 
-	err := manager.Update(func(configuration *Configuration) error {
+	err := manager.UpdateConfiguration(func(configuration *Configuration) error {
 		configuration.CommunicationConfig.RequestTimeout = time.Second
 		return errors.New("reject update")
 	})
 	if err == nil {
-		t.Fatal("Update() error = nil, want error")
+		t.Fatal("UpdateConfiguration() error = nil, want error")
 	}
-	if got := manager.Get(); got != before {
+	if got := manager.GetConfiguration(); got != before {
 		t.Fatalf("configuration after rejected update = %#v, want %#v", got, before)
 	}
 	select {
@@ -44,14 +44,14 @@ func TestManagerUpdateRejectsChangeAtomically(t *testing.T) {
 
 func TestManagerUpdateBroadcastsLatestConfig(t *testing.T) {
 	manager := NewManager(DefaultConfiguration())
-	_, firstListener := manager.Snapshot()
-	_, secondListener := manager.Snapshot()
+	_, firstListener := manager.ConfigurationSnapshot()
+	_, secondListener := manager.ConfigurationSnapshot()
 
-	if err := manager.Update(func(configuration *Configuration) error {
+	if err := manager.UpdateConfiguration(func(configuration *Configuration) error {
 		configuration.CommunicationConfig.RequestTimeout = time.Second
 		return nil
 	}); err != nil {
-		t.Fatalf("Update() error = %v", err)
+		t.Fatalf("UpdateConfiguration() error = %v", err)
 	}
 
 	for name, changes := range map[string]<-chan struct{}{
@@ -68,7 +68,7 @@ func TestManagerUpdateBroadcastsLatestConfig(t *testing.T) {
 		}
 	}
 
-	current, nextChanges := manager.Snapshot()
+	current, nextChanges := manager.ConfigurationSnapshot()
 	if got := current.CommunicationConfig.RequestTimeout; got != time.Second {
 		t.Fatalf("request timeout after notification = %v, want %v", got, time.Second)
 	}
@@ -78,18 +78,18 @@ func TestManagerUpdateBroadcastsLatestConfig(t *testing.T) {
 	default:
 	}
 
-	if err := manager.Update(func(configuration *Configuration) error {
+	if err := manager.UpdateConfiguration(func(configuration *Configuration) error {
 		configuration.CommunicationConfig.RequestTimeout = 2 * time.Second
 		return nil
 	}); err != nil {
-		t.Fatalf("second Update() error = %v", err)
+		t.Fatalf("second UpdateConfiguration() error = %v", err)
 	}
 	select {
 	case <-nextChanges:
 	default:
 		t.Fatal("second update did not close the new change channel")
 	}
-	if got, _ := manager.Snapshot(); got.CommunicationConfig.RequestTimeout != 2*time.Second {
+	if got, _ := manager.ConfigurationSnapshot(); got.CommunicationConfig.RequestTimeout != 2*time.Second {
 		t.Fatalf("request timeout after second notification = %v, want %v", got.CommunicationConfig.RequestTimeout, 2*time.Second)
 	}
 }

@@ -192,7 +192,7 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 		},
 	}
 	go func() {
-		Poll(ctx, pollConfig)
+		Poll(ctx, config.NewManager(pollConfig))
 		close(finished)
 	}()
 
