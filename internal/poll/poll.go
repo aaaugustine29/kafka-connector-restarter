@@ -14,7 +14,8 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
-func Poll(ctx context.Context, configuration config.Configuration) {
+func Poll(ctx context.Context, configManager *config.Manager) {
+	configuration, updateChannel := configManager.ConfigurationSnapshot()
 	var connectHTTPClient = &http.Client{
 		Timeout: configuration.CommunicationConfig.RequestTimeout,
 	}
@@ -32,6 +33,27 @@ func Poll(ctx context.Context, configuration config.Configuration) {
 		case <-ctx.Done():
 			slog.Info("polling stopped")
 			return
+		case <-updateChannel:
+			var newConfiguration config.Configuration
+			newConfiguration, updateChannel = configManager.ConfigurationSnapshot()
+			if newConfiguration.CommunicationConfig != configuration.CommunicationConfig ||
+				newConfiguration.ConnectConfig != configuration.ConnectConfig {
+				if newConfiguration.CommunicationConfig != configuration.CommunicationConfig {
+					connectHTTPClient = &http.Client{
+						Timeout: newConfiguration.CommunicationConfig.RequestTimeout,
+					}
+				}
+				connect = requests.NewConnectAPI(connectHTTPClient, newConfiguration.ConnectConfig)
+			}
+			if newConfiguration.PollingBehavior.Backoff != configuration.PollingBehavior.Backoff {
+				backoffFilter.BackoffConfig = newConfiguration.PollingBehavior.Backoff
+			}
+			if newConfiguration.PollingBehavior.Interval != configuration.PollingBehavior.Interval {
+				ticker.Reset(newConfiguration.PollingBehavior.Interval)
+			}
+
+			configuration = newConfiguration
+
 		case <-ticker.C:
 			connectorStatuses, err := status.FindConnectorStatuses(ctx, connect)
 			if err != nil {
