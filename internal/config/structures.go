@@ -1,12 +1,9 @@
 package config
 
-import (
-	"log/slog"
-	"time"
-)
+import "log/slog"
 
 type CommunicationConfiguration struct {
-	RequestTimeout time.Duration `json:"requestTimeout"`
+	RequestTimeout Duration `json:"requestTimeout"`
 }
 
 type AuthConfiguration struct {
@@ -16,14 +13,14 @@ type AuthConfiguration struct {
 }
 
 type BackoffConfiguration struct {
-	Enabled     bool          `json:"enabled"`
-	BaseDelay   time.Duration `json:"baseDelay"`
-	MaxDelay    time.Duration `json:"maxDelay"`
-	Exponential bool          `json:"exponential"`
+	Enabled     bool     `json:"enabled"`
+	BaseDelay   Duration `json:"baseDelay"`
+	MaxDelay    Duration `json:"maxDelay"`
+	Exponential bool     `json:"exponential"`
 }
 
 type PollingBehavior struct {
-	Interval           time.Duration        `json:"interval"`
+	Interval           Duration             `json:"interval"`
 	RestartFailedTasks bool                 `json:"restartFailedTasks"`
 	Backoff            BackoffConfiguration `json:"backoff"`
 }

@@ -40,8 +40,8 @@ func (backoffFilter *BackoffFilter) IsInBackoffWindow(connectorName string, task
 
 	nextBackoffTime := determineNextActionTime(
 		backoffStatus.LastAttemptTime,
-		backoffFilter.BackoffConfig.BaseDelay,
-		backoffFilter.BackoffConfig.MaxDelay,
+		backoffFilter.BackoffConfig.BaseDelay.Duration(),
+		backoffFilter.BackoffConfig.MaxDelay.Duration(),
 		backoffStatus.Attempts,
 		backoffFilter.BackoffConfig.Exponential,
 	)

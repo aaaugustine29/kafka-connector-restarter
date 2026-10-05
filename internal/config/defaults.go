@@ -6,18 +6,18 @@ import (
 )
 
 const (
-	DefaultPollingInterval                  = 10 * time.Second
-	DefaultRestartFailedTasks               = true
-	DefaultRestartBackoffEnabled            = true
-	DefaultRestartBackoffBaseDelay          = 2 * DefaultPollingInterval
-	DefaultRestartBackoffMaxDelay           = 10 * time.Minute
-	DefaultRestartBackoffExponentialEnabled = true
-	DefaultConnectBasicAuthEnabled          = false
-	DefaultHTTPRequestTimeout               = 10 * time.Second
-	DefaultConnectAPIHost                   = "localhost"
-	DefaultConnectAPIPort                   = "8083"
-	DefaultConnectAPISecureHTTP             = false
-	DefaultLogLevel                         = slog.LevelInfo
+	DefaultPollingInterval                  Duration = Duration(10 * time.Second)
+	DefaultRestartFailedTasks                        = true
+	DefaultRestartBackoffEnabled                     = true
+	DefaultRestartBackoffBaseDelay                   = 2 * DefaultPollingInterval
+	DefaultRestartBackoffMaxDelay           Duration = Duration(10 * time.Minute)
+	DefaultRestartBackoffExponentialEnabled          = true
+	DefaultConnectBasicAuthEnabled                   = false
+	DefaultHTTPRequestTimeout               Duration = Duration(10 * time.Second)
+	DefaultConnectAPIHost                            = "localhost"
+	DefaultConnectAPIPort                            = "8083"
+	DefaultConnectAPIHTTPS                           = false
+	DefaultLogLevel                                  = slog.LevelInfo
 )
 
 func DefaultAuthConfiguration() AuthConfiguration {
@@ -47,7 +47,7 @@ func DefaultConnectAPIConfiguration() ConnectAPIConfiguration {
 	return ConnectAPIConfiguration{
 		Host:       DefaultConnectAPIHost,
 		Port:       DefaultConnectAPIPort,
-		HTTPS:      DefaultConnectAPISecureHTTP,
+		HTTPS:      DefaultConnectAPIHTTPS,
 		AuthConfig: DefaultAuthConfiguration(),
 	}
 }

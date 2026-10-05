@@ -26,7 +26,7 @@ const (
 	DefaultHTTPRequestTimeout               = config.DefaultHTTPRequestTimeout
 	DefaultConnectHost                      = config.DefaultConnectAPIHost
 	DefaultConnectPort                      = config.DefaultConnectAPIPort
-	DefaultConnectSecureHTTP                = config.DefaultConnectAPISecureHTTP
+	DefaultConnectHTTPS                     = config.DefaultConnectAPIHTTPS
 )
 
 func TestLoadLoggingConfiguration(t *testing.T) {
@@ -57,13 +57,17 @@ func TestLoadPollingInterval(t *testing.T) {
 	tests := []struct {
 		name     string
 		value    string
-		expected time.Duration
+		expected config.Duration
 	}{
 		{name: "unset uses default", expected: DefaultPollingInterval},
 		{name: "invalid uses default", value: "not-a-number", expected: DefaultPollingInterval},
-		{name: "zero uses default", value: "0", expected: DefaultPollingInterval},
-		{name: "negative uses default", value: "-1", expected: DefaultPollingInterval},
-		{name: "valid value is milliseconds", value: "250", expected: 250 * time.Millisecond},
+		{name: "zero uses default", value: "0s", expected: DefaultPollingInterval},
+		{name: "negative uses default", value: "-1s", expected: DefaultPollingInterval},
+		{name: "missing units uses default", value: "250", expected: DefaultPollingInterval},
+		{name: "overflow uses default", value: "9223372036854775808ns", expected: DefaultPollingInterval},
+		{name: "milliseconds are loaded", value: "250ms", expected: config.Duration(250 * time.Millisecond)},
+		{name: "fractional seconds are loaded", value: "1.5s", expected: config.Duration(1500 * time.Millisecond)},
+		{name: "compound duration is loaded", value: "1m30s", expected: config.Duration(90 * time.Second)},
 	}
 
 	for _, test := range tests {
@@ -104,8 +108,8 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 	tests := []struct {
 		name        string
 		enabled     string
-		baseDelayMS string
-		maxDelayMS  string
+		baseDelay   string
+		maxDelay    string
 		exponential string
 		expected    BackoffConfiguration
 	}{
@@ -121,34 +125,34 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 		{
 			name:        "valid values are loaded",
 			enabled:     "true",
-			baseDelayMS: "250",
-			maxDelayMS:  "1000",
+			baseDelay:   "250ms",
+			maxDelay:    "1s",
 			exponential: "false",
 			expected: BackoffConfiguration{
 				Enabled:     true,
-				BaseDelay:   250 * time.Millisecond,
-				MaxDelay:    time.Second,
+				BaseDelay:   config.Duration(250 * time.Millisecond),
+				MaxDelay:    config.Duration(time.Second),
 				Exponential: false,
 			},
 		},
 		{
 			name:        "disabled backoff retains the rest of its configuration",
 			enabled:     "false",
-			baseDelayMS: "250",
-			maxDelayMS:  "1000",
+			baseDelay:   "250ms",
+			maxDelay:    "1s",
 			exponential: "false",
 			expected: BackoffConfiguration{
 				Enabled:     false,
-				BaseDelay:   250 * time.Millisecond,
-				MaxDelay:    time.Second,
+				BaseDelay:   config.Duration(250 * time.Millisecond),
+				MaxDelay:    config.Duration(time.Second),
 				Exponential: false,
 			},
 		},
 		{
 			name:        "invalid values use defaults",
 			enabled:     "sometimes",
-			baseDelayMS: "not-a-number",
-			maxDelayMS:  "not-a-number",
+			baseDelay:   "not-a-duration",
+			maxDelay:    "not-a-duration",
 			exponential: "sometimes",
 			expected: BackoffConfiguration{
 				Enabled:     DefaultRestartBackoffEnabled,
@@ -158,8 +162,8 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			},
 		},
 		{
-			name:        "zero base delay uses default",
-			baseDelayMS: "0",
+			name:      "zero base delay uses default",
+			baseDelay: "0s",
 			expected: BackoffConfiguration{
 				Enabled:     DefaultRestartBackoffEnabled,
 				BaseDelay:   DefaultRestartBackoffBaseDelay,
@@ -168,8 +172,8 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			},
 		},
 		{
-			name:        "negative base delay uses default",
-			baseDelayMS: "-1",
+			name:      "negative base delay uses default",
+			baseDelay: "-1s",
 			expected: BackoffConfiguration{
 				Enabled:     DefaultRestartBackoffEnabled,
 				BaseDelay:   DefaultRestartBackoffBaseDelay,
@@ -178,23 +182,40 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 			},
 		},
 		{
-			name:        "maximum delay below the base delay uses the base delay",
-			baseDelayMS: "500",
-			maxDelayMS:  "250",
+			name:      "maximum delay below the base delay uses the base delay",
+			baseDelay: "500ms",
+			maxDelay:  "250ms",
 			expected: BackoffConfiguration{
 				Enabled:     DefaultRestartBackoffEnabled,
-				BaseDelay:   500 * time.Millisecond,
-				MaxDelay:    500 * time.Millisecond,
+				BaseDelay:   config.Duration(500 * time.Millisecond),
+				MaxDelay:    config.Duration(500 * time.Millisecond),
 				Exponential: DefaultRestartBackoffExponentialEnabled,
 			},
+		},
+		{
+			name:      "overflowing durations use defaults",
+			baseDelay: "9223372036854775808ns",
+			maxDelay:  "9223372036854775808ns",
+			expected:  config.DefaultBackoffConfiguration(),
+		},
+		{
+			name:      "durations without units use defaults",
+			baseDelay: "250",
+			maxDelay:  "1000",
+			expected:  config.DefaultBackoffConfiguration(),
+		},
+		{
+			name:     "zero maximum delay uses default",
+			maxDelay: "0s",
+			expected: config.DefaultBackoffConfiguration(),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(RestartBackoffEnabled, test.enabled)
-			t.Setenv(RestartBackoffBaseDelayMS, test.baseDelayMS)
-			t.Setenv(RestartBackoffMaxDelayMS, test.maxDelayMS)
+			t.Setenv(RestartBackoffBaseDelayEnv, test.baseDelay)
+			t.Setenv(RestartBackoffMaxDelayEnv, test.maxDelay)
 			t.Setenv(RestartBackoffExponentialEnabled, test.exponential)
 
 			if got := LoadBackoffConfiguration(); got != test.expected {
@@ -204,26 +225,30 @@ func TestLoadBackoffConfiguration(t *testing.T) {
 	}
 }
 
-func TestLoadConfigIncludesPollingBehavior(t *testing.T) {
-	t.Setenv(PollingIntervalEnv, "250")
+func TestLoadConfigIncludesDurationConfiguration(t *testing.T) {
+	t.Setenv(PollingIntervalEnv, "250ms")
+	t.Setenv(HTTPRequestTimeoutEnv, "1.5s")
 	t.Setenv(PollingRestartFailedTasks, "false")
 	t.Setenv(RestartBackoffEnabled, "false")
-	t.Setenv(RestartBackoffBaseDelayMS, "500")
-	t.Setenv(RestartBackoffMaxDelayMS, "1000")
+	t.Setenv(RestartBackoffBaseDelayEnv, "500ms")
+	t.Setenv(RestartBackoffMaxDelayEnv, "1s")
 	t.Setenv(RestartBackoffExponentialEnabled, "false")
 
 	expected := PollingBehavior{
-		Interval:           250 * time.Millisecond,
+		Interval:           config.Duration(250 * time.Millisecond),
 		RestartFailedTasks: false,
 		Backoff: BackoffConfiguration{
 			Enabled:     false,
-			BaseDelay:   500 * time.Millisecond,
-			MaxDelay:    time.Second,
+			BaseDelay:   config.Duration(500 * time.Millisecond),
+			MaxDelay:    config.Duration(time.Second),
 			Exponential: false,
 		},
 	}
 	if got := LoadConfig().PollingBehavior; got != expected {
 		t.Fatalf("LoadConfig().PollingBehavior = %#v, want %#v", got, expected)
+	}
+	if got := LoadConfig().CommunicationConfig.RequestTimeout; got != config.Duration(1500*time.Millisecond) {
+		t.Fatalf("LoadConfig().CommunicationConfig.RequestTimeout = %v, want 1.5s", got)
 	}
 }
 
@@ -241,7 +266,7 @@ func TestLoadConnectConfiguration(t *testing.T) {
 			name:          "unset uses defaults",
 			expectedHost:  DefaultConnectHost,
 			expectedPort:  DefaultConnectPort,
-			expectedHTTPS: DefaultConnectSecureHTTP,
+			expectedHTTPS: DefaultConnectHTTPS,
 		},
 		{
 			name:          "configured host and port",
@@ -263,7 +288,7 @@ func TestLoadConnectConfiguration(t *testing.T) {
 			https:         "sometimes",
 			expectedHost:  DefaultConnectHost,
 			expectedPort:  DefaultConnectPort,
-			expectedHTTPS: DefaultConnectSecureHTTP,
+			expectedHTTPS: DefaultConnectHTTPS,
 		},
 		{
 			name:          "IPv6 host is loaded",
@@ -357,18 +382,21 @@ func TestLoadCommunicationConfiguration(t *testing.T) {
 	tests := []struct {
 		name     string
 		value    string
-		expected time.Duration
+		expected config.Duration
 	}{
 		{name: "unset uses default", expected: DefaultHTTPRequestTimeout},
 		{name: "invalid uses default", value: "not-a-number", expected: DefaultHTTPRequestTimeout},
-		{name: "zero uses default", value: "0", expected: DefaultHTTPRequestTimeout},
-		{name: "negative uses default", value: "-1", expected: DefaultHTTPRequestTimeout},
-		{name: "valid value is milliseconds", value: "250", expected: 250 * time.Millisecond},
+		{name: "zero uses default", value: "0s", expected: DefaultHTTPRequestTimeout},
+		{name: "negative uses default", value: "-1s", expected: DefaultHTTPRequestTimeout},
+		{name: "missing units uses default", value: "250", expected: DefaultHTTPRequestTimeout},
+		{name: "overflow uses default", value: "9223372036854775808ns", expected: DefaultHTTPRequestTimeout},
+		{name: "milliseconds are loaded", value: "250ms", expected: config.Duration(250 * time.Millisecond)},
+		{name: "seconds are loaded", value: "2s", expected: config.Duration(2 * time.Second)},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(HTTPRequestTimeout, test.value)
+			t.Setenv(HTTPRequestTimeoutEnv, test.value)
 
 			if got := LoadCommunicationConfiguration().RequestTimeout; got != test.expected {
 				t.Fatalf("LoadCommunicationConfiguration().RequestTimeout = %v, want %v", got, test.expected)

@@ -11,13 +11,13 @@ func TestManagerUpdateCommitsSingleValue(t *testing.T) {
 	manager := NewManager(DefaultConfiguration())
 
 	err := manager.UpdateConfiguration(func(configuration *Configuration) error {
-		configuration.CommunicationConfig.RequestTimeout = 2 * time.Second
+		configuration.CommunicationConfig.RequestTimeout = Duration(2 * time.Second)
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("UpdateConfiguration() error = %v", err)
 	}
-	if got := manager.GetConfiguration().CommunicationConfig.RequestTimeout; got != 2*time.Second {
+	if got := manager.GetConfiguration().CommunicationConfig.RequestTimeout; got != Duration(2*time.Second) {
 		t.Fatalf("request timeout = %v, want %v", got, 2*time.Second)
 	}
 }
@@ -27,7 +27,7 @@ func TestManagerUpdateRejectsChangeAtomically(t *testing.T) {
 	before, changes := manager.ConfigurationSnapshot()
 
 	err := manager.UpdateConfiguration(func(configuration *Configuration) error {
-		configuration.CommunicationConfig.RequestTimeout = time.Second
+		configuration.CommunicationConfig.RequestTimeout = Duration(time.Second)
 		return errors.New("reject update")
 	})
 	if err == nil {
@@ -49,7 +49,7 @@ func TestManagerUpdateBroadcastsLatestConfig(t *testing.T) {
 	_, secondListener := manager.ConfigurationSnapshot()
 
 	if err := manager.UpdateConfiguration(func(configuration *Configuration) error {
-		configuration.CommunicationConfig.RequestTimeout = time.Second
+		configuration.CommunicationConfig.RequestTimeout = Duration(time.Second)
 		return nil
 	}); err != nil {
 		t.Fatalf("UpdateConfiguration() error = %v", err)
@@ -70,7 +70,7 @@ func TestManagerUpdateBroadcastsLatestConfig(t *testing.T) {
 	}
 
 	current, nextChanges := manager.ConfigurationSnapshot()
-	if got := current.CommunicationConfig.RequestTimeout; got != time.Second {
+	if got := current.CommunicationConfig.RequestTimeout; got != Duration(time.Second) {
 		t.Fatalf("request timeout after notification = %v, want %v", got, time.Second)
 	}
 	select {
@@ -80,7 +80,7 @@ func TestManagerUpdateBroadcastsLatestConfig(t *testing.T) {
 	}
 
 	if err := manager.UpdateConfiguration(func(configuration *Configuration) error {
-		configuration.CommunicationConfig.RequestTimeout = 2 * time.Second
+		configuration.CommunicationConfig.RequestTimeout = Duration(2 * time.Second)
 		return nil
 	}); err != nil {
 		t.Fatalf("second UpdateConfiguration() error = %v", err)
@@ -90,7 +90,7 @@ func TestManagerUpdateBroadcastsLatestConfig(t *testing.T) {
 	default:
 		t.Fatal("second update did not close the new change channel")
 	}
-	if got, _ := manager.ConfigurationSnapshot(); got.CommunicationConfig.RequestTimeout != 2*time.Second {
+	if got, _ := manager.ConfigurationSnapshot(); got.CommunicationConfig.RequestTimeout != Duration(2*time.Second) {
 		t.Fatalf("request timeout after second notification = %v, want %v", got.CommunicationConfig.RequestTimeout, 2*time.Second)
 	}
 }
@@ -114,7 +114,7 @@ func TestManagerUpdateRejectsInvalidConfiguration(t *testing.T) {
 		{
 			name: "backoff maximum below base",
 			change: func(config *Configuration) {
-				config.PollingBehavior.Backoff.MaxDelay = config.PollingBehavior.Backoff.BaseDelay - time.Millisecond
+				config.PollingBehavior.Backoff.MaxDelay = config.PollingBehavior.Backoff.BaseDelay - Duration(time.Millisecond)
 			},
 			wantError: "backoff maximum delay",
 		},

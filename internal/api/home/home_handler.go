@@ -13,7 +13,6 @@ type routeInfo struct {
 }
 
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
-
 	routes := []routeInfo{
 		{
 			Method:        "GET",

@@ -21,6 +21,7 @@ func (handler *ConfigHandler) GetConfig(
 	r *http.Request,
 ) {
 	configuration := handler.manager.GetConfiguration()
+	configuration.ConnectConfig.AuthConfig.Password = ""
 
 	w.Header().Set("Content-Type", "application/json")
 

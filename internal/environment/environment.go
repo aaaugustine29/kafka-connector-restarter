@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/config"
 )
@@ -25,29 +24,8 @@ func LoadBackoffConfiguration() config.BackoffConfiguration {
 		}
 	}
 
-	backoffBaseDelayString := os.Getenv(RestartBackoffBaseDelayMS)
-	if backoffBaseDelayString == "" {
-		slog.Debug("backoff setting is not configured; using default", "setting", RestartBackoffBaseDelayMS, "value", config.DefaultRestartBackoffBaseDelay)
-	} else {
-		backoffBaseDelay, err := strconv.Atoi(backoffBaseDelayString)
-		if err != nil || backoffBaseDelay <= 0 {
-			slog.Warn("invalid backoff setting; using default", "setting", RestartBackoffBaseDelayMS, "value", backoffBaseDelayString, "default", config.DefaultRestartBackoffBaseDelay)
-		} else {
-			backoffConfig.BaseDelay = time.Duration(backoffBaseDelay) * time.Millisecond
-		}
-	}
-
-	backoffMaxDelayString := os.Getenv(RestartBackoffMaxDelayMS)
-	if backoffMaxDelayString == "" {
-		slog.Debug("backoff setting is not configured; using default", "setting", RestartBackoffMaxDelayMS, "value", config.DefaultRestartBackoffMaxDelay)
-	} else {
-		backoffMaxDelay, err := strconv.Atoi(backoffMaxDelayString)
-		if err != nil || backoffMaxDelay <= 0 {
-			slog.Warn("invalid backoff setting; using default", "setting", RestartBackoffMaxDelayMS, "value", backoffMaxDelayString, "default", config.DefaultRestartBackoffMaxDelay)
-		} else {
-			backoffConfig.MaxDelay = time.Duration(backoffMaxDelay) * time.Millisecond
-		}
-	}
+	backoffConfig.BaseDelay = loadDuration(RestartBackoffBaseDelayEnv, backoffConfig.BaseDelay)
+	backoffConfig.MaxDelay = loadDuration(RestartBackoffMaxDelayEnv, backoffConfig.MaxDelay)
 
 	if backoffConfig.MaxDelay < backoffConfig.BaseDelay {
 		slog.Warn("backoff maximum delay is less than the base delay; using the base delay", "maximum_delay", backoffConfig.MaxDelay, "base_delay", backoffConfig.BaseDelay)
@@ -103,23 +81,8 @@ func LoadPollingBehavior() config.PollingBehavior {
 	}
 }
 
-func LoadPollingInterval() time.Duration {
-	defaultConfig := config.DefaultPollingBehavior()
-	pollInterval := os.Getenv(PollingIntervalEnv)
-	if pollInterval == "" {
-		slog.Debug("polling interval is not configured; using default", "setting", PollingIntervalEnv, "value", defaultConfig.Interval)
-		return defaultConfig.Interval
-	}
-
-	pollIntervalMS, err := strconv.Atoi(pollInterval)
-	if err != nil || pollIntervalMS <= 0 {
-		slog.Warn("invalid polling interval; using default", "setting", PollingIntervalEnv, "value", pollInterval, "default", defaultConfig.Interval)
-		return defaultConfig.Interval
-	}
-
-	pollingInterval := time.Duration(pollIntervalMS) * time.Millisecond
-	slog.Debug("polling interval configured", "value", pollingInterval)
-	return pollingInterval
+func LoadPollingInterval() config.Duration {
+	return loadDuration(PollingIntervalEnv, config.DefaultPollingInterval)
 }
 
 func LoadRestartFailedTasks() bool {
@@ -188,20 +151,7 @@ func LoadHTTPS() bool {
 
 func LoadCommunicationConfiguration() config.CommunicationConfiguration {
 	defaultConfig := config.DefaultCommunicationConfiguration()
-	requestTimeoutString := os.Getenv(HTTPRequestTimeout)
-
-	if requestTimeoutString == "" {
-		slog.Debug("HTTP request timeout is not configured; using default", "setting", HTTPRequestTimeout, "value", defaultConfig.RequestTimeout)
-		return defaultConfig
-	}
-
-	requestTimeoutMS, err := strconv.ParseInt(requestTimeoutString, 10, 64)
-	if err != nil || requestTimeoutMS <= 0 {
-		slog.Warn("invalid HTTP request timeout; using default", "setting", HTTPRequestTimeout, "value", requestTimeoutString, "default", defaultConfig.RequestTimeout)
-		return defaultConfig
-	}
-
-	defaultConfig.RequestTimeout = time.Duration(requestTimeoutMS) * time.Millisecond
+	defaultConfig.RequestTimeout = loadDuration(HTTPRequestTimeoutEnv, defaultConfig.RequestTimeout)
 	return defaultConfig
 }
 

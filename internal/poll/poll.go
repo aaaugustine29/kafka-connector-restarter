@@ -16,8 +16,8 @@ import (
 
 func Poll(ctx context.Context, configManager *config.Manager) {
 	configuration, updateChannel := configManager.ConfigurationSnapshot()
-	var connectHTTPClient = &http.Client{
-		Timeout: configuration.CommunicationConfig.RequestTimeout,
+	connectHTTPClient := &http.Client{
+		Timeout: configuration.CommunicationConfig.RequestTimeout.Duration(),
 	}
 	connect := requests.NewConnectAPI(connectHTTPClient, configuration.ConnectConfig)
 	backoffFilter := backoff.BackoffFilter{
@@ -25,7 +25,7 @@ func Poll(ctx context.Context, configManager *config.Manager) {
 		BackoffStatuses: map[string]backoff.BackoffStatus{},
 	}
 
-	ticker := time.NewTicker(configuration.PollingBehavior.Interval)
+	ticker := time.NewTicker(configuration.PollingBehavior.Interval.Duration())
 	defer ticker.Stop()
 
 	for {
@@ -40,7 +40,7 @@ func Poll(ctx context.Context, configManager *config.Manager) {
 				newConfiguration.ConnectConfig != configuration.ConnectConfig {
 				if newConfiguration.CommunicationConfig != configuration.CommunicationConfig {
 					connectHTTPClient = &http.Client{
-						Timeout: newConfiguration.CommunicationConfig.RequestTimeout,
+						Timeout: newConfiguration.CommunicationConfig.RequestTimeout.Duration(),
 					}
 				}
 				connect = requests.NewConnectAPI(connectHTTPClient, newConfiguration.ConnectConfig)
@@ -49,7 +49,7 @@ func Poll(ctx context.Context, configManager *config.Manager) {
 				backoffFilter.BackoffConfig = newConfiguration.PollingBehavior.Backoff
 			}
 			if newConfiguration.PollingBehavior.Interval != configuration.PollingBehavior.Interval {
-				ticker.Reset(newConfiguration.PollingBehavior.Interval)
+				ticker.Reset(newConfiguration.PollingBehavior.Interval.Duration())
 			}
 
 			configuration = newConfiguration

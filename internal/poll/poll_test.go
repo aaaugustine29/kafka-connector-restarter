@@ -19,7 +19,7 @@ import (
 
 func TestFilterByBackoffs(t *testing.T) {
 	recentAttempt := time.Now().Add(-30 * time.Minute)
-	backoffConfig := config.BackoffConfiguration{BaseDelay: time.Hour}
+	backoffConfig := config.BackoffConfiguration{BaseDelay: config.Duration(time.Hour)}
 
 	tests := []struct {
 		name     string
@@ -180,14 +180,14 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 			Port:  serverURL.Port(),
 			HTTPS: serverURL.Scheme == "https",
 		},
-		CommunicationConfig: config.CommunicationConfiguration{RequestTimeout: time.Second},
+		CommunicationConfig: config.CommunicationConfiguration{RequestTimeout: config.Duration(time.Second)},
 		PollingBehavior: config.PollingBehavior{
-			Interval:           10 * time.Millisecond,
+			Interval:           config.Duration(10 * time.Millisecond),
 			RestartFailedTasks: true,
 			Backoff: config.BackoffConfiguration{
 				Enabled:   true,
-				BaseDelay: time.Hour,
-				MaxDelay:  time.Hour,
+				BaseDelay: config.Duration(time.Hour),
+				MaxDelay:  config.Duration(time.Hour),
 			},
 		},
 	}

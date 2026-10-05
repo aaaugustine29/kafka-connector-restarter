@@ -23,10 +23,10 @@ func main() {
 
 	environmentConfig := environment.LoadConfig()
 	configManager := config.NewManager(environmentConfig)
-	config, configUpdateChannel := configManager.ConfigurationSnapshot()
+	configuration, configUpdateChannel := configManager.ConfigurationSnapshot()
 
 	loggingLevel := new(slog.LevelVar)
-	loggingLevel.Set(config.LoggingConfig.Level)
+	loggingLevel.Set(configuration.LoggingConfig.Level)
 	logging.Configure(loggingLevel)
 
 	go func() {
@@ -35,8 +35,8 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-configUpdateChannel:
-				config, configUpdateChannel = configManager.ConfigurationSnapshot()
-				loggingLevel.Set(config.LoggingConfig.Level)
+				configuration, configUpdateChannel = configManager.ConfigurationSnapshot()
+				loggingLevel.Set(configuration.LoggingConfig.Level)
 			}
 		}
 	}()

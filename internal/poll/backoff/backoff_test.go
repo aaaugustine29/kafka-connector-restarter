@@ -123,8 +123,8 @@ func TestResetBackoffStatus(t *testing.T) {
 
 func TestIsInBackoffWindow(t *testing.T) {
 	backoffConfig := config.BackoffConfiguration{
-		BaseDelay: time.Hour,
-		MaxDelay:  time.Hour,
+		BaseDelay: config.Duration(time.Hour),
+		MaxDelay:  config.Duration(time.Hour),
 	}
 
 	tests := []struct {
