@@ -12,7 +12,7 @@ type CommunicationConfiguration struct {
 type AuthConfiguration struct {
 	Enabled  bool   `json:"enabled"`
 	Username string `json:"username"`
-	Password string `json:"password"`
+	Password string `json:"password,omitempty"`
 }
 
 type BackoffConfiguration struct {
