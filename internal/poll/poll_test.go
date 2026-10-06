@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,81 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/poll/backoff"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 )
+
+func TestPollStopsBeforeNextTick(t *testing.T) {
+	configuration := config.DefaultConfiguration()
+	configuration.PollingBehavior.Interval = config.Duration(time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	finished := make(chan struct{})
+	go func() {
+		Poll(ctx, config.NewManager(configuration))
+		close(finished)
+	}()
+
+	cancel()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Poll did not stop without waiting for the next tick")
+	}
+}
+
+func TestPollCancellationInterruptsStatusRequest(t *testing.T) {
+	requestStarted := make(chan struct{})
+	requestCanceled := make(chan struct{})
+	handlerCtx, stopHandler := context.WithCancel(context.Background())
+	var startedOnce, canceledOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.RequestURI() != "/connectors?expand=status" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.RequestURI())
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		startedOnce.Do(func() { close(requestStarted) })
+		select {
+		case <-r.Context().Done():
+			canceledOnce.Do(func() { close(requestCanceled) })
+		case <-handlerCtx.Done():
+		}
+	}))
+	defer server.Close()
+	defer stopHandler()
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := config.DefaultConfiguration()
+	configuration.ConnectConfig.Host = serverURL.Hostname()
+	configuration.ConnectConfig.Port = serverURL.Port()
+	configuration.PollingBehavior.Interval = config.Duration(10 * time.Millisecond)
+	// A long timeout proves cancellation ends the request, rather than timeout.
+	configuration.CommunicationConfig.RequestTimeout = config.Duration(time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	finished := make(chan struct{})
+	go func() {
+		Poll(ctx, config.NewManager(configuration))
+		close(finished)
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Poll did not start a status request")
+	}
+
+	cancel()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Poll did not stop after cancellation during a status request")
+	}
+	select {
+	case <-requestCanceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("status request did not observe cancellation")
+	}
+}
 
 func TestFilterByBackoffs(t *testing.T) {
 	recentAttempt := time.Now().Add(-30 * time.Minute)
