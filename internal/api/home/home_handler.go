@@ -19,6 +19,11 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 			Path:          "/",
 			Functionality: "api methods, routes, and functionalities",
 		},
+		{
+			Method:        "GET",
+			Path:          "/config",
+			Functionality: "retrieves current configuration",
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
