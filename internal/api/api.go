@@ -8,24 +8,18 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/config"
 )
 
-type APIEngine struct {
-	mux *http.ServeMux
-}
-
 type APIComponents struct {
 	ConfigManager *config.Manager
 }
 
-func (api *APIEngine) StartAPI(components APIComponents) error {
+func NewServer(components APIComponents) *http.Server {
 	configHandler := configAPI.NewConfigHandler(components.ConfigManager)
 
-	api.mux = http.NewServeMux()
-	api.mux.HandleFunc("GET /{$}", home.HomeHandler)
-	api.mux.HandleFunc("GET /config", configHandler.GetConfig)
-	server := &http.Server{
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", home.HomeHandler)
+	mux.HandleFunc("GET /config", configHandler.GetConfig)
+	return &http.Server{
 		Addr:    ":8080",
-		Handler: api.mux,
+		Handler: mux,
 	}
-
-	return server.ListenAndServe()
 }
