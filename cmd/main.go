@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -27,7 +28,7 @@ func main() {
 
 	environmentConfig := environment.LoadConfig()
 	configManager := config.NewManager(environmentConfig)
-	configuration, configUpdateChannel := configManager.ConfigurationSnapshot()
+	configuration := configManager.GetConfiguration()
 
 	loggingLevel := new(slog.LevelVar)
 	loggingLevel.Set(configuration.LoggingConfig.Level)
@@ -37,13 +38,22 @@ func main() {
 		ConfigManager: configManager,
 	}
 	server := api.NewServer(apiComponents)
-	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("API serving failed", "err", err)
-		}
-	}()
+	var workers sync.WaitGroup
 
-	go func() {
+	workers.Go(func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("API serving failed; polling will continue", "error", err)
+		}
+	})
+
+	workers.Go(func() {
+		poll.Poll(ctx, configManager)
+	})
+
+	workers.Go(func() {
+		configuration, configUpdateChannel := configManager.ConfigurationSnapshot()
+		loggingLevel.Set(configuration.LoggingConfig.Level)
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -53,18 +63,20 @@ func main() {
 				loggingLevel.Set(configuration.LoggingConfig.Level)
 			}
 		}
-	}()
+	})
 
-	poll.Poll(ctx, configManager)
+	<-ctx.Done()
+	slog.Info("Kafka connector restarter stopping")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Error("API shutdown failed", "err", err)
+		slog.Warn("API graceful shutdown failed; closing connections", "error", err)
 		if err := server.Close(); err != nil {
-			slog.Error("API close failed", "err", err)
+			slog.Error("API close failed", "error", err)
 		}
 	}
 
+	workers.Wait()
 	slog.Info("Kafka connector restarter stopped")
 }

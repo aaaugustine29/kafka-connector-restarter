@@ -4,7 +4,7 @@ Polls the Kafka Connect REST API and restarts failed connectors. When task resta
 
 ## Run
 
-Requires Go 1.26.2 or later. With Kafka Connect available at the default `http://localhost:8083`:
+Requires Go 1.27.1 or later. With Kafka Connect available at the default `http://localhost:8083`:
 
 ```sh
 go run ./cmd
