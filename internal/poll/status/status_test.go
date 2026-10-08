@@ -11,6 +11,7 @@ func TestMapConnectorStatusResponse(t *testing.T) {
 	response := &http.Response{
 		Body: io.NopCloser(strings.NewReader(`{
 			"FileStreamSinkConnectorConnector_0": {
+				"info": {"name": "FileStreamSinkConnectorConnector_0"},
 				"status": {
 					"name": "FileStreamSinkConnectorConnector_0",
 					"connector": {"state": "RUNNING", "worker_id": "10.0.0.162:8083"},
@@ -37,5 +38,26 @@ func TestMapConnectorStatusResponse(t *testing.T) {
 
 	if len(status.Tasks) != 1 || status.Tasks[0].ID != 0 || status.Tasks[0].WorkerID != "10.0.0.162:8083" {
 		t.Fatalf("task statuses = %#v, want one running task", status.Tasks)
+	}
+}
+
+func TestMapConnectorStatusResponseRejectsInvalidJSON(t *testing.T) {
+	for _, body := range []string{
+		`{} {}`,
+		`{"connector":{},"connector":{}}`,
+		`{"connector":{"status":{"name":"first","name":"second"}}}`,
+		`{"connector":{"status":{"name":"\ud800"}}}`,
+		"{\"connector\":{\"status\":{\"name\":\"\xff\"}}}",
+	} {
+		t.Run(body, func(t *testing.T) {
+			response := &http.Response{Body: io.NopCloser(strings.NewReader(body))}
+			statuses, err := mapConnectorStatusResponse(response)
+			if err == nil {
+				t.Fatal("invalid JSON response was accepted")
+			}
+			if statuses != nil {
+				t.Fatal("invalid JSON response returned partial statuses")
+			}
+		})
 	}
 }

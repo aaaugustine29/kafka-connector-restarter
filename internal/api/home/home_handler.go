@@ -1,7 +1,7 @@
 package home
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 )
@@ -24,11 +24,16 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 			Path:          "/config",
 			Functionality: "retrieves current configuration",
 		},
+		{
+			Method:        "PATCH",
+			Path:          "/config",
+			Functionality: "updates runtime configuration",
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 
-	if err := json.NewEncoder(w).Encode(routes); err != nil {
+	if err := json.MarshalWrite(w, routes); err != nil {
 		slog.Error("failed to write home API response", "method", r.Method, "path", r.URL.Path, "error", err)
 		return
 	}

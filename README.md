@@ -20,7 +20,7 @@ go run ./cmd --config=/path/to/config.yaml --secret-config=/path/to/secret-confi
 
 The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns the current configuration without the password. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed.
 
-API connections have a five-second header timeout, a ten-second response-write timeout, and a one-minute idle timeout. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection and backoff skips are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Normal shutdown cancellation does not generate polling failure logs.
+API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection and backoff skips are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Normal shutdown cancellation does not generate polling failure logs.
 
 ## Configuration
 
@@ -93,7 +93,19 @@ Every outbound restart request counts as an attempt, including requests that ret
 
 ## Configuration API
 
-`GET /config` returns the effective configuration as JSON and omits the authentication password. Durations use the same string format as YAML, with Go's canonical spelling (for example, `10m` is written as `10m0s`). Numeric JSON durations are rejected. Internal runtime updates use the same validation as startup and reject invalid configuration without changing stored values. The HTTP API exposes no configuration write endpoint.
+`GET /config` returns the effective configuration as JSON, omits the authentication password, and sets `Cache-Control: no-store` to prevent caching. Durations use the same string format as YAML, with Go's canonical spelling (for example, `10m` is written as `10m0s`). Numeric JSON durations are rejected.
+
+`PATCH /config` accepts a partial JSON object using the same field names and requires `Content-Type: application/json` (parameters such as `charset=utf-8` are accepted). Missing, malformed, or unsupported content types return `415` with `Accept-Patch: application/json`. Supplied fields replace their current values; omitted fields retain them, including an omitted authentication password. The complete resulting configuration must pass the same validation as startup. Invalid updates return `400` without changing stored values. Field errors identify the affected path without exposing submitted values. Successful updates return `204 No Content` and notify the polling and logging workers. Bodies larger than 64 KiB return `413`; body-read timeouts return `408`.
+
+```sh
+curl -X PATCH http://localhost:8080/config \
+  -H 'Content-Type: application/json' \
+  -d '{"pollingBehavior":{"interval":"30s","restartFailedTasks":false}}'
+```
+
+JSON handling uses Go's `encoding/json/v2`. Null values and duplicate keys are rejected at every nesting level. Duplicate checking also catches escaped spellings and casing differences such as `interval` and `Interval`. Repeating a key in separate objects is allowed. Unknown fields and invalid UTF-8 are rejected too. JSON decoding errors use JSON Pointer paths, such as `/pollingBehavior/interval`; configuration validation errors use dotted paths.
+
+Updates affect only the running process. Startup YAML files are never modified, and restarting restores configuration from those files.
 
 ## Tests
 

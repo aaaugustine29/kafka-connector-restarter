@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -312,8 +312,8 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 			}
 			got = append(got, request)
 		}
-		sort.Strings(got)
-		sort.Strings(expected)
+		slices.Sort(got)
+		slices.Sort(expected)
 		if !reflect.DeepEqual(got, expected) {
 			t.Fatalf("%s: restart requests = %v, want %v", name, got, expected)
 		}

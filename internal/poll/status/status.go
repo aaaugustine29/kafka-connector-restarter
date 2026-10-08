@@ -2,7 +2,7 @@ package status
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 
@@ -68,7 +68,7 @@ func mapConnectorStatusResponse(response *http.Response) (map[string]ConnectorSt
 	var responseStatuses map[string]struct {
 		Status ConnectorStatus `json:"status"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&responseStatuses); err != nil {
+	if err := json.UnmarshalRead(response.Body, &responseStatuses); err != nil {
 		return nil, fmt.Errorf("decode connector statuses: %w", err)
 	}
 

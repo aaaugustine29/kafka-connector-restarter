@@ -3,7 +3,8 @@ package actions
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -331,7 +332,7 @@ func TestRemediationActionLoggerTaskID(t *testing.T) {
 			var logs bytes.Buffer
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 			RemediationAction{ConnectorName: "connector", Kind: kind, TaskID: 0}.Logger().Info("test")
-			var record map[string]json.RawMessage
+			var record map[string]jsontext.Value
 			if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
 				t.Fatal(err)
 			}

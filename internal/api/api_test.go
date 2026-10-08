@@ -1,12 +1,16 @@
 package api
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +41,21 @@ func startTestServer(t *testing.T, server *http.Server) string {
 		}
 	})
 	return "http://" + listener.Addr().String()
+}
+
+func TestNewServerPatchConfigRoute(t *testing.T) {
+	manager := config.NewManager(config.DefaultConfiguration())
+	server := NewServer(APIComponents{ConfigManager: manager})
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPatch, "/config", strings.NewReader(`{"pollingBehavior":{"interval":"30s"}}`))
+	request.Header.Set("Content-Type", "application/json")
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if manager.GetConfiguration().PollingBehavior.Interval != config.Duration(30*time.Second) {
+		t.Fatal("PATCH route did not update the configuration")
+	}
 }
 
 func TestNewServerRoutes(t *testing.T) {
@@ -80,7 +99,7 @@ func TestNewServerRoutes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !json.Valid(body) {
+			if !jsontext.Value(body).IsValid() {
 				t.Fatalf("invalid JSON response: %s", body)
 			}
 			if test.path == "/config" {
@@ -158,7 +177,7 @@ func TestServerShutdownWaitsForActiveRequest(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("active request failed during shutdown: %v", result.err)
 		}
-		if result.status != http.StatusOK || !json.Valid(result.body) {
+		if result.status != http.StatusOK || !jsontext.Value(result.body).IsValid() {
 			t.Fatalf("active request returned status %d, body %q", result.status, result.body)
 		}
 	case <-time.After(5 * time.Second):
@@ -171,5 +190,45 @@ func TestServerShutdownWaitsForActiveRequest(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("shutdown did not finish after releasing the request")
+	}
+}
+
+func TestServerTimesOutIncompletePatchBody(t *testing.T) {
+	before := config.DefaultConfiguration()
+	manager := config.NewManager(before)
+	_, changes := manager.ConfigurationSnapshot()
+	server := NewServer(APIComponents{ConfigManager: manager})
+	if server.ReadTimeout <= 0 {
+		t.Fatal("server has no request-body read deadline")
+	}
+	server.ReadTimeout = 100 * time.Millisecond
+	baseURL := startTestServer(t, server)
+	connection, err := net.DialTimeout("tcp", strings.TrimPrefix(baseURL, "http://"), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	// Send complete headers, then stop before the declared body is complete.
+	if _, err := io.WriteString(connection, "PATCH /config HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{"); err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.ReadResponse(bufio.NewReader(connection), &http.Request{Method: http.MethodPatch})
+	if err != nil {
+		t.Fatalf("read timeout response: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusRequestTimeout {
+		t.Fatalf("status = %d, want 408", response.StatusCode)
+	}
+	if manager.GetConfiguration() != before {
+		t.Fatal("incomplete patch changed configuration")
+	}
+	select {
+	case <-changes:
+		t.Fatal("incomplete patch notified workers")
+	default:
 	}
 }

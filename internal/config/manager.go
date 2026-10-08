@@ -55,37 +55,39 @@ func (m *Manager) UpdateConfiguration(changeConfig func(*Configuration) error) e
 func ValidateConfiguration(config Configuration) error {
 	pollingConfig := config.PollingBehavior
 	if pollingConfig.Interval <= 0 {
-		return fmt.Errorf("polling interval must be greater than zero")
+		return fmt.Errorf("pollingBehavior.interval: polling interval must be greater than zero")
 	}
 
 	backoffConfig := pollingConfig.Backoff
 	if backoffConfig.BaseDelay <= 0 {
-		return fmt.Errorf("backoff base delay must be greater than zero")
+		return fmt.Errorf("pollingBehavior.backoff.baseDelay: backoff base delay must be greater than zero")
 	}
 	if backoffConfig.MaxDelay < backoffConfig.BaseDelay {
-		return fmt.Errorf("backoff maximum delay must be at least the base delay")
+		return fmt.Errorf("pollingBehavior.backoff.maxDelay: backoff maximum delay must be at least the base delay")
 	}
 
 	if config.CommunicationConfig.RequestTimeout <= 0 {
-		return fmt.Errorf("HTTP request timeout must be greater than zero")
+		return fmt.Errorf("communicationConfig.requestTimeout: HTTP request timeout must be greater than zero")
 	}
 
 	connectConfig := config.ConnectConfig
 	if strings.TrimSpace(connectConfig.Host) == "" {
-		return fmt.Errorf("Connect host must not be empty")
+		return fmt.Errorf("connectConfig.host: Connect host must not be empty")
 	}
 	port, err := strconv.Atoi(connectConfig.Port)
 	if err != nil || port < 1 || port > 65535 {
-		return fmt.Errorf("Connect port must be between 1 and 65535")
+		return fmt.Errorf("connectConfig.port: Connect port must be between 1 and 65535")
 	}
 
 	if connectConfig.AuthConfig.Enabled {
 		if !connectConfig.HTTPS {
-			return fmt.Errorf("Basic Auth requires HTTPS")
+			return fmt.Errorf("connectConfig.https: Basic Auth requires HTTPS")
 		}
-		if strings.TrimSpace(connectConfig.AuthConfig.Username) == "" ||
-			connectConfig.AuthConfig.Password == "" {
-			return fmt.Errorf("Basic Auth requires a username and password")
+		if strings.TrimSpace(connectConfig.AuthConfig.Username) == "" {
+			return fmt.Errorf("connectConfig.authConfig.username: Basic Auth requires a username and password")
+		}
+		if connectConfig.AuthConfig.Password == "" {
+			return fmt.Errorf("connectConfig.authConfig.password: Basic Auth requires a username and password")
 		}
 	}
 

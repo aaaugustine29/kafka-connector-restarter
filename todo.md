@@ -1,4 +1,4 @@
+- Implement authentication on API
 - Add something configurable like "RESTART_STATES" where you list the restart states that count as needing a restart, and have a default
 - Can we somehow like schedule restarts, and have a thread just constantly update a set of statuses that are 
-- refactor defaults so that we can just return default values as structs when something isn't set
 - audit pass by value/reference
