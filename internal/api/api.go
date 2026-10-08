@@ -1,7 +1,9 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
+	"time"
 
 	configAPI "entropicworks.com/kafka-connector-restarter/internal/api/config"
 	"entropicworks.com/kafka-connector-restarter/internal/api/home"
@@ -19,7 +21,11 @@ func NewServer(components APIComponents) *http.Server {
 	mux.HandleFunc("GET /{$}", home.HomeHandler)
 	mux.HandleFunc("GET /config", configHandler.GetConfig)
 	return &http.Server{
-		Addr:    ":8080",
-		Handler: mux,
+		Addr:              ":8080",
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       time.Minute,
+		ErrorLog:          slog.NewLogLogger(slog.Default().Handler(), slog.LevelError),
 	}
 }

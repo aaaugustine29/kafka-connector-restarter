@@ -1,10 +1,14 @@
 package actions
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"testing"
 
@@ -283,5 +287,61 @@ func TestTakeActionRecordsFailedRequest(t *testing.T) {
 	}
 	if result.StatusCode != 0 {
 		t.Fatalf("TakeAction() StatusCode = %d, want 0", result.StatusCode)
+	}
+}
+
+func TestGenerateRemediationActionURLEscapesConnectorName(t *testing.T) {
+	for _, test := range []struct {
+		kind ActionKind
+		path string
+	}{
+		{RestartConnector, "/connectors/name%2Fwith%20%3F%23%25/restart"},
+		{RestartTask, "/connectors/name%2Fwith%20%3F%23%25/tasks/0/restart"},
+	} {
+		t.Run(string(test.kind), func(t *testing.T) {
+			requestURL, err := generateRemediationActionURL(
+				requests.ConnectAPI{BaseURL: "http://connect.example.test"},
+				RemediationAction{ConnectorName: "name/with ?#%", Kind: test.kind},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := url.Parse(requestURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.EscapedPath() != test.path || parsed.Fragment != "" {
+				t.Fatalf("unexpected remediation URL: %s", requestURL)
+			}
+			if test.kind == RestartConnector && parsed.RawQuery != "includeTasks=true&onlyFailed=true" {
+				t.Fatalf("connector name changed the query: %s", requestURL)
+			}
+			if test.kind == RestartTask && parsed.RawQuery != "" {
+				t.Fatalf("connector name added a query: %s", requestURL)
+			}
+		})
+	}
+}
+
+func TestRemediationActionLoggerTaskID(t *testing.T) {
+	previousLogger := slog.Default()
+	defer slog.SetDefault(previousLogger)
+	for _, kind := range []ActionKind{RestartConnector, RestartTask} {
+		t.Run(string(kind), func(t *testing.T) {
+			var logs bytes.Buffer
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+			RemediationAction{ConnectorName: "connector", Kind: kind, TaskID: 0}.Logger().Info("test")
+			var record map[string]json.RawMessage
+			if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
+				t.Fatal(err)
+			}
+			taskID, present := record["task_id"]
+			if present != (kind == RestartTask) {
+				t.Fatalf("task_id present = %t for action %s", present, kind)
+			}
+			if present && string(taskID) != "0" {
+				t.Fatalf("task_id = %s, want 0", taskID)
+			}
+		})
 	}
 }

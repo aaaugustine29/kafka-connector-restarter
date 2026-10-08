@@ -57,6 +57,9 @@ func Poll(ctx context.Context, configManager *config.Manager) {
 		case <-ticker.C:
 			connectorStatuses, err := status.FindConnectorStatuses(ctx, connect)
 			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				slog.Error("poll cycle failed while retrieving connector statuses", "error", err)
 				continue
 			}
@@ -68,9 +71,12 @@ func Poll(ctx context.Context, configManager *config.Manager) {
 				connectorRemediationActions = FilterByBackoffs(backoffFilter, connectorRemediationActions)
 			}
 			for _, remediationAction := range connectorRemediationActions {
+				if ctx.Err() != nil {
+					return
+				}
 				result, err := actions.TakeAction(ctx, remediationAction, connect)
-				if err != nil {
-					slog.Error("remediation action failed", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID, "error", err)
+				if err != nil && ctx.Err() == nil {
+					remediationAction.Logger().Error("remediation request failed", "request_made", result.RequestMade, "status_code", result.StatusCode, "error", err)
 				}
 				if result.RequestMade {
 					switch remediationAction.Kind {
@@ -79,7 +85,7 @@ func Poll(ctx context.Context, configManager *config.Manager) {
 					case actions.RestartTask:
 						backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, &remediationAction.TaskID)
 					default:
-						slog.Error("unsupported remediation action", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
+						remediationAction.Logger().Error("unsupported remediation action")
 					}
 				}
 			}
@@ -118,6 +124,8 @@ func FilterByBackoffs(backoffFilter backoff.BackoffFilter, originalActions []act
 			} else {
 				slog.Debug("task restart skipped because it is in the backoff window", "connector", action.ConnectorName, "task_id", action.TaskID)
 			}
+		default:
+			action.Logger().Error("cannot filter unsupported remediation action")
 		}
 	}
 	return filteredActions

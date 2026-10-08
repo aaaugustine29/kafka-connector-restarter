@@ -29,7 +29,7 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(routes); err != nil {
-		slog.Error("failed to write home API response", "error", err)
+		slog.Error("failed to write home API response", "method", r.Method, "path", r.URL.Path, "error", err)
 		return
 	}
 }

@@ -12,6 +12,10 @@ go run ./cmd
 
 To use another Kafka Connect host, set `RESTARTER_CONNECT_HOST` and optionally `RESTARTER_CONNECT_PORT` before running. Use `RESTARTER_CONNECT_HTTPS=true` when connecting over HTTPS.
 
+The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns the current configuration without the password. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed.
+
+API connections have a five-second header timeout, a ten-second response-write timeout, and a one-minute idle timeout. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection and backoff skips are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Normal shutdown cancellation does not generate polling failure logs.
+
 ## Configuration
 
 Startup settings are environment variables. Durations are positive strings with units, such as `250ms`, `10s`, `1.5s`, or `1m30s`. Supported units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, and `h`. Invalid, nonpositive, or overflowing values fall back to the defaults; if the maximum backoff delay is lower than the base delay, it is raised to the base delay.

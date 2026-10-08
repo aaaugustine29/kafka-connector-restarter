@@ -26,7 +26,7 @@ func (handler *ConfigHandler) GetConfig(
 	w.Header().Set("Content-Type", "application/json")
 
 	if err := json.NewEncoder(w).Encode(configuration); err != nil {
-		slog.Error("failed to write config API response", "error", err)
+		slog.Error("failed to write config API response", "method", r.Method, "path", r.URL.Path, "error", err)
 		return
 	}
 }

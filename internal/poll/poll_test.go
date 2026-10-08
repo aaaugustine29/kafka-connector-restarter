@@ -1,13 +1,16 @@
 package poll
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,6 +41,10 @@ func TestPollStopsBeforeNextTick(t *testing.T) {
 }
 
 func TestPollCancellationInterruptsStatusRequest(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(previousLogger)
 	requestStarted := make(chan struct{})
 	requestCanceled := make(chan struct{})
 	handlerCtx, stopHandler := context.WithCancel(context.Background())
@@ -90,6 +97,9 @@ func TestPollCancellationInterruptsStatusRequest(t *testing.T) {
 	case <-requestCanceled:
 	case <-time.After(5 * time.Second):
 		t.Fatal("status request did not observe cancellation")
+	}
+	if strings.Contains(logs.String(), "level=ERROR") {
+		t.Fatalf("normal cancellation logged an error: %s", logs.String())
 	}
 }
 

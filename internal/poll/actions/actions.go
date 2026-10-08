@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,6 +17,14 @@ type RemediationAction struct {
 	ConnectorName string
 	Kind          ActionKind
 	TaskID        int
+}
+
+func (action RemediationAction) Logger() *slog.Logger {
+	logger := slog.With("action", action.Kind, "connector", action.ConnectorName)
+	if action.Kind == RestartTask {
+		logger = logger.With("task_id", action.TaskID)
+	}
+	return logger
 }
 
 type RemediationActionResult struct {
@@ -50,7 +59,7 @@ func DetermineActionsForConnector(
 						Kind:          RestartTask,
 						TaskID:        task.ID,
 					})
-					slog.Warn("failed task detected; scheduling restart", "connector", status.Name, "task_id", task.ID)
+					slog.Debug("failed task detected", "connector", status.Name, "task_id", task.ID)
 				}
 			}
 		}
@@ -60,7 +69,7 @@ func DetermineActionsForConnector(
 			Kind:          RestartConnector,
 			TaskID:        0,
 		})
-		slog.Warn("failed connector detected; scheduling restart", "connector", status.Name)
+		slog.Debug("failed connector detected", "connector", status.Name)
 	} else {
 		slog.Debug("connector is not eligible for remediation", "connector", status.Name, "state", status.Connector.State)
 	}
@@ -78,9 +87,9 @@ func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, res
 func generateRemediationActionURL(connect requests.ConnectAPI, action RemediationAction) (string, error) {
 	switch action.Kind {
 	case RestartConnector:
-		return connect.BaseURL + fmt.Sprintf(defaultConnectorRestartPath, action.ConnectorName), nil
+		return connect.BaseURL + fmt.Sprintf(defaultConnectorRestartPath, url.PathEscape(action.ConnectorName)), nil
 	case RestartTask:
-		return connect.BaseURL + fmt.Sprintf(defaultTaskRestartPath, action.ConnectorName, action.TaskID), nil
+		return connect.BaseURL + fmt.Sprintf(defaultTaskRestartPath, url.PathEscape(action.ConnectorName), action.TaskID), nil
 	default:
 		return "", fmt.Errorf("unsupported remediation action %q for connector %q and task %d",
 			action.Kind, action.ConnectorName, action.TaskID)
@@ -95,13 +104,14 @@ func TakeAction(ctx context.Context, remediationAction RemediationAction, connec
 		}, err
 	}
 
-	slog.Info("taking remediation action", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
+	logger := remediationAction.Logger()
+	logger.Info("sending remediation request")
 	result, err := makeActionRequest(ctx, connect, requestURL)
 	if err != nil {
 		return result, err
 	}
 
-	slog.Info("remediation action completed", "action", remediationAction.Kind, "connector", remediationAction.ConnectorName, "task_id", remediationAction.TaskID)
+	logger.Info("remediation request accepted", "status_code", result.StatusCode)
 	return result, nil
 }
 
