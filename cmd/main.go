@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,12 +14,24 @@ import (
 
 	"entropicworks.com/kafka-connector-restarter/internal/api"
 	"entropicworks.com/kafka-connector-restarter/internal/config"
-	"entropicworks.com/kafka-connector-restarter/internal/environment"
 	"entropicworks.com/kafka-connector-restarter/internal/logging"
 	"entropicworks.com/kafka-connector-restarter/internal/poll"
 )
 
 func main() {
+	configPath := flag.String("config", "config.yaml", "path to the base YAML configuration")
+	secretPath := flag.String("secret-config", "", "path to an optional Secret YAML overlay")
+	flag.Parse()
+	if flag.NArg() != 0 {
+		slog.Error("unexpected positional arguments; use --config and --secret-config")
+		os.Exit(1)
+	}
+	startupConfig, err := config.LoadFiles(*configPath, *secretPath)
+	if err != nil {
+		slog.Error("configuration loading failed", "error", err)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
@@ -26,8 +39,7 @@ func main() {
 	)
 	defer stop()
 
-	environmentConfig := environment.LoadConfig()
-	configManager := config.NewManager(environmentConfig)
+	configManager := config.NewManager(startupConfig)
 	configuration := configManager.GetConfiguration()
 
 	loggingLevel := new(slog.LevelVar)

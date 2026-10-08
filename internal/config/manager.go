@@ -42,7 +42,7 @@ func (m *Manager) UpdateConfiguration(changeConfig func(*Configuration) error) e
 	if err := changeConfig(&next); err != nil {
 		return err
 	}
-	if err := validateConfiguration(next); err != nil {
+	if err := ValidateConfiguration(next); err != nil {
 		return err
 	}
 	m.config = next
@@ -51,7 +51,8 @@ func (m *Manager) UpdateConfiguration(changeConfig func(*Configuration) error) e
 	return nil
 }
 
-func validateConfiguration(config Configuration) error {
+// ValidateConfiguration checks the same invariants for startup and runtime updates.
+func ValidateConfiguration(config Configuration) error {
 	pollingConfig := config.PollingBehavior
 	if pollingConfig.Interval <= 0 {
 		return fmt.Errorf("polling interval must be greater than zero")

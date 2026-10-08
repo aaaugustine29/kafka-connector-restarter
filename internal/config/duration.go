@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
-// Duration stores a time.Duration and represents it as a duration string in JSON.
+// Duration stores a time.Duration and represents it as a duration string in JSON and YAML.
 type Duration time.Duration
 
 func ParseDuration(value string) (Duration, error) {
@@ -37,6 +39,22 @@ func (duration *Duration) UnmarshalJSON(data []byte) error {
 	next, err := ParseDuration(value)
 	if err != nil {
 		return err
+	}
+	*duration = next
+	return nil
+}
+
+func (duration Duration) MarshalYAML() (any, error) {
+	return duration.String(), nil
+}
+
+func (duration *Duration) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
+		return fmt.Errorf("line %d: duration must be a string with units", node.Line)
+	}
+	next, err := ParseDuration(node.Value)
+	if err != nil {
+		return fmt.Errorf("line %d: invalid duration string", node.Line)
 	}
 	*duration = next
 	return nil

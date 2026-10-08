@@ -3,42 +3,42 @@ package config
 import "log/slog"
 
 type CommunicationConfiguration struct {
-	RequestTimeout Duration `json:"requestTimeout"`
+	RequestTimeout Duration `json:"requestTimeout" yaml:"requestTimeout"`
 }
 
 type AuthConfiguration struct {
-	Enabled  bool   `json:"enabled"`
-	Username string `json:"username"`
-	Password string `json:"password,omitempty"`
+	Enabled  bool   `json:"enabled" yaml:"enabled"`
+	Username string `json:"username" yaml:"username"`
+	Password string `json:"password,omitempty" yaml:"password,omitempty"`
 }
 
 type BackoffConfiguration struct {
-	Enabled     bool     `json:"enabled"`
-	BaseDelay   Duration `json:"baseDelay"`
-	MaxDelay    Duration `json:"maxDelay"`
-	Exponential bool     `json:"exponential"`
+	Enabled     bool     `json:"enabled" yaml:"enabled"`
+	BaseDelay   Duration `json:"baseDelay" yaml:"baseDelay"`
+	MaxDelay    Duration `json:"maxDelay" yaml:"maxDelay"`
+	Exponential bool     `json:"exponential" yaml:"exponential"`
 }
 
 type PollingBehavior struct {
-	Interval           Duration             `json:"interval"`
-	RestartFailedTasks bool                 `json:"restartFailedTasks"`
-	Backoff            BackoffConfiguration `json:"backoff"`
+	Interval           Duration             `json:"interval" yaml:"interval"`
+	RestartFailedTasks bool                 `json:"restartFailedTasks" yaml:"restartFailedTasks"`
+	Backoff            BackoffConfiguration `json:"backoff" yaml:"backoff"`
 }
 
 type ConnectAPIConfiguration struct {
-	Host       string            `json:"host"`
-	Port       string            `json:"port"`
-	HTTPS      bool              `json:"https"`
-	AuthConfig AuthConfiguration `json:"authConfig"`
+	Host       string            `json:"host" yaml:"host"`
+	Port       string            `json:"port" yaml:"port"`
+	HTTPS      bool              `json:"https" yaml:"https"`
+	AuthConfig AuthConfiguration `json:"authConfig" yaml:"authConfig"`
 }
 
 type Configuration struct {
-	PollingBehavior     PollingBehavior            `json:"pollingBehavior"`
-	CommunicationConfig CommunicationConfiguration `json:"communicationConfig"`
-	ConnectConfig       ConnectAPIConfiguration    `json:"connectConfig"`
-	LoggingConfig       LoggingConfiguration       `json:"loggingConfig"`
+	PollingBehavior     PollingBehavior            `json:"pollingBehavior" yaml:"pollingBehavior"`
+	CommunicationConfig CommunicationConfiguration `json:"communicationConfig" yaml:"communicationConfig"`
+	ConnectConfig       ConnectAPIConfiguration    `json:"connectConfig" yaml:"connectConfig"`
+	LoggingConfig       LoggingConfiguration       `json:"loggingConfig" yaml:"loggingConfig"`
 }
 
 type LoggingConfiguration struct {
-	Level slog.Level `json:"level"`
+	Level slog.Level `json:"level" yaml:"level"`
 }
