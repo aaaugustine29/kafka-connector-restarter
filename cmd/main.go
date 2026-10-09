@@ -67,12 +67,15 @@ func main() {
 		ConfigManager: configManager,
 	}
 	server := api.NewServer(apiComponents)
+	apiLogger := slog.With("component", "api", "address", server.Addr)
 	var workers sync.WaitGroup
 
 	workers.Go(func() {
-		slog.Info("starting API server", "address", server.Addr, "authentication_enabled", configuration.APIConfig.AuthConfig.Enabled)
+		apiLogger.Info("starting API server", "authentication_enabled", configuration.APIConfig.AuthConfig.Enabled)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("API serving failed; polling will continue", "error", err)
+			apiLogger.Error("API serving failed; polling will continue", "error", err)
+		} else if errors.Is(err, http.ErrServerClosed) {
+			apiLogger.Debug("API listener stopped")
 		}
 	})
 
@@ -101,13 +104,20 @@ func main() {
 	<-ctx.Done()
 	slog.Info("Kafka connector restarter stopping")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	const shutdownTimeout = 5 * time.Second
+	shutdownStarted := time.Now()
+	apiLogger.Info("API graceful shutdown started", "timeout", shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Warn("API graceful shutdown failed; closing connections", "error", err)
+		apiLogger.Warn("API graceful shutdown failed; closing connections", "duration", time.Since(shutdownStarted), "error", err)
 		if err := server.Close(); err != nil {
-			slog.Error("API close failed", "error", err)
+			apiLogger.Error("API forced shutdown failed", "duration", time.Since(shutdownStarted), "error", err)
+		} else {
+			apiLogger.Info("API connections forcibly closed", "duration", time.Since(shutdownStarted))
 		}
+	} else {
+		apiLogger.Info("API graceful shutdown completed", "duration", time.Since(shutdownStarted))
 	}
 
 	workers.Wait()
