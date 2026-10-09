@@ -50,7 +50,7 @@ func (m *Manager) UpdateConfiguration(changeConfig func(*Configuration) error) e
 	if err := ValidateConfiguration(next); err != nil {
 		return err
 	}
-	if next == m.config {
+	if ConfigurationsAreEqual(next, m.config) {
 		return nil
 	}
 	m.config = next
@@ -88,27 +88,29 @@ func ValidateConfiguration(config Configuration) error {
 		}
 	}
 
-	connectConfig := config.ConnectConfig
-	if strings.TrimSpace(connectConfig.Host) == "" {
-		return fmt.Errorf("connectConfig.host: Connect host must not be empty")
-	}
-	if !validConnectHost(connectConfig.Host) {
-		return fmt.Errorf("connectConfig.host: Connect host must be a hostname or unbracketed IP address without a scheme, port, path, or whitespace")
-	}
-	port, err := strconv.Atoi(connectConfig.Port)
-	if err != nil || port < 1 || port > 65535 {
-		return fmt.Errorf("connectConfig.port: Connect port must be between 1 and 65535")
-	}
+	connectConfigs := config.ConnectConfigs
+	for name, config := range connectConfigs {
+		if strings.TrimSpace(config.Host) == "" {
+			return fmt.Errorf("For connect", name, "connectConfig.host: Connect host must not be empty")
+		}
+		if !validConnectHost(config.Host) {
+			return fmt.Errorf("For connect", name, "connectConfig.host: Connect host must be a hostname or unbracketed IP address without a scheme, port, path, or whitespace")
+		}
+		port, err := strconv.Atoi(config.Port)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("For connect", name, "connectConfig.port: Connect port must be between 1 and 65535")
+		}
 
-	if connectConfig.AuthConfig.Enabled {
-		if !connectConfig.HTTPS {
-			return fmt.Errorf("connectConfig.https: Basic Auth requires HTTPS")
-		}
-		if strings.TrimSpace(connectConfig.AuthConfig.Username) == "" {
-			return fmt.Errorf("connectConfig.authConfig.username: Basic Auth requires a username and password")
-		}
-		if connectConfig.AuthConfig.Password == "" {
-			return fmt.Errorf("connectConfig.authConfig.password: Basic Auth requires a username and password")
+		if config.AuthConfig.Enabled {
+			if !config.HTTPS {
+				return fmt.Errorf("For connect", name, "connectConfig.https: Basic Auth requires HTTPS")
+			}
+			if strings.TrimSpace(config.AuthConfig.Username) == "" {
+				return fmt.Errorf("For connect", name, "connectConfig.authConfig.username: Basic Auth requires a username and password")
+			}
+			if config.AuthConfig.Password == "" {
+				return fmt.Errorf("For connect", name, "connectConfig.authConfig.password: Basic Auth requires a username and password")
+			}
 		}
 	}
 

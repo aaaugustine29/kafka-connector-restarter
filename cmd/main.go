@@ -58,9 +58,11 @@ func main() {
 		}
 	})
 
-	workers.Go(func() {
-		poll.Poll(ctx, configManager)
-	})
+	for name, _ := range configuration.ConnectConfigs {
+		workers.Go(func() {
+			poll.Poll(ctx, configManager, name)
+		})
+	}
 
 	workers.Go(func() {
 		configuration, configUpdateChannel := configManager.ConfigurationSnapshot()

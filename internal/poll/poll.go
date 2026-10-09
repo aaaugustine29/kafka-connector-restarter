@@ -14,12 +14,13 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
-func Poll(ctx context.Context, configManager *config.Manager) {
+func Poll(ctx context.Context, configManager *config.Manager, name string) {
 	configuration, updateChannel := configManager.ConfigurationSnapshot()
 	connectHTTPClient := &http.Client{
 		Timeout: configuration.CommunicationConfig.RequestTimeout.Duration(),
 	}
-	connect := requests.NewConnectAPI(connectHTTPClient, configuration.ConnectConfig)
+	connectConfig := configuration.ConnectConfigs[name]
+	connect := requests.NewConnectAPI(connectHTTPClient, connectConfig)
 	backoffFilter := backoff.BackoffFilter{
 		BackoffConfig:   configuration.PollingBehavior.Backoff,
 		BackoffStatuses: map[string]backoff.BackoffStatus{},
@@ -36,19 +37,20 @@ func Poll(ctx context.Context, configManager *config.Manager) {
 		case <-updateChannel:
 			var newConfiguration config.Configuration
 			newConfiguration, updateChannel = configManager.ConfigurationSnapshot()
+			newConnectConfig := newConfiguration.ConnectConfigs[name]
 			if newConfiguration.CommunicationConfig != configuration.CommunicationConfig ||
-				newConfiguration.ConnectConfig != configuration.ConnectConfig {
+				connectConfig != connectConfig {
 				if newConfiguration.CommunicationConfig != configuration.CommunicationConfig {
 					connectHTTPClient = &http.Client{
 						Timeout: newConfiguration.CommunicationConfig.RequestTimeout.Duration(),
 					}
 				}
-				if newConfiguration.ConnectConfig.Host != configuration.ConnectConfig.Host ||
-					newConfiguration.ConnectConfig.Port != configuration.ConnectConfig.Port ||
-					newConfiguration.ConnectConfig.HTTPS != configuration.ConnectConfig.HTTPS {
+				if newConnectConfig.Host != connectConfig.Host ||
+					newConnectConfig.Port != connectConfig.Port ||
+					newConnectConfig.HTTPS != connectConfig.HTTPS {
 					backoffFilter.BackoffStatuses = map[string]backoff.BackoffStatus{}
 				}
-				connect = requests.NewConnectAPI(connectHTTPClient, newConfiguration.ConnectConfig)
+				connect = requests.NewConnectAPI(connectHTTPClient, newConnectConfig)
 			}
 			if newConfiguration.PollingBehavior.Backoff != configuration.PollingBehavior.Backoff {
 				backoffFilter.BackoffConfig = newConfiguration.PollingBehavior.Backoff

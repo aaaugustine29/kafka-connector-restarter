@@ -1,4 +1,4 @@
-- Implement authentication on API
+- We should have it where there is a separate endpoint, and separate package, for adding/removing connect configurations. With the change to support multiple configurations, this should be separate.
 - Add something configurable like "RESTART_STATES" where you list the restart states that count as needing a restart, and have a default
 - Can we somehow like schedule restarts, and have a thread just constantly update a set of statuses that are 
 - audit pass by value/reference

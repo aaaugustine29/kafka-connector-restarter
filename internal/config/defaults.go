@@ -44,13 +44,14 @@ func DefaultPollingBehavior() PollingBehavior {
 	}
 }
 
-func DefaultConnectAPIConfiguration() ConnectAPIConfiguration {
-	return ConnectAPIConfiguration{
-		Host:       DefaultConnectAPIHost,
-		Port:       DefaultConnectAPIPort,
-		HTTPS:      DefaultConnectAPIHTTPS,
-		AuthConfig: DefaultAuthConfiguration(),
-	}
+func DefaultConnectAPIConfiguration() map[string]ConnectAPIConfiguration {
+	return map[string]ConnectAPIConfiguration{
+		"default": {
+			Host:       DefaultConnectAPIHost,
+			Port:       DefaultConnectAPIPort,
+			HTTPS:      DefaultConnectAPIHTTPS,
+			AuthConfig: DefaultAuthConfiguration(),
+		}}
 }
 
 func DefaultLoggingConfiguration() LoggingConfiguration {
@@ -67,7 +68,7 @@ func DefaultConfiguration() Configuration {
 	return Configuration{
 		PollingBehavior:     DefaultPollingBehavior(),
 		CommunicationConfig: DefaultCommunicationConfiguration(),
-		ConnectConfig:       DefaultConnectAPIConfiguration(),
+		ConnectConfigs:      DefaultConnectAPIConfiguration(),
 		APIConfig:           DefaultAPIConfiguration(),
 		LoggingConfig:       DefaultLoggingConfiguration(),
 	}
