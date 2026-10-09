@@ -103,7 +103,7 @@ func TestNewServerRoutes(t *testing.T) {
 				t.Fatalf("invalid JSON response: %s", body)
 			}
 			if test.path == "/config" {
-				var got config.Configuration
+				var got config.ApplicationConfiguration
 				if err := json.Unmarshal(body, &got); err != nil {
 					t.Fatal(err)
 				}

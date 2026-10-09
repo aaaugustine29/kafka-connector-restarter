@@ -20,16 +20,12 @@ func newPatchRequest(body string) *http.Request {
 
 func TestGetConfigReturnsLatestConfigurationWithoutPassword(t *testing.T) {
 	configuration := config.DefaultConfiguration()
-	configuration.ConnectConfig.HTTPS = true
-	configuration.ConnectConfig.AuthConfig = config.AuthConfiguration{
-		Enabled: true, Username: "user", Password: "secret",
-	}
 	configuration.APIConfig.AuthConfig = config.AuthConfiguration{
 		Enabled: true, Username: "api-user", Password: "api-secret",
 	}
 	manager := config.NewManager(configuration)
 	handler := NewConfigHandler(manager)
-	if err := manager.UpdateConfiguration(func(configuration *config.Configuration) error {
+	if err := manager.UpdateConfiguration(func(configuration *config.ApplicationConfiguration) error {
 		configuration.PollingBehavior.Interval = config.Duration(250 * time.Millisecond)
 		return nil
 	}); err != nil {
@@ -50,9 +46,6 @@ func TestGetConfigReturnsLatestConfigurationWithoutPassword(t *testing.T) {
 		PollingBehavior struct {
 			Interval string `json:"interval"`
 		} `json:"pollingBehavior"`
-		ConnectConfig struct {
-			AuthConfig map[string]jsontext.Value `json:"authConfig"`
-		} `json:"connectConfig"`
 		APIConfig struct {
 			AuthConfig map[string]jsontext.Value `json:"authConfig"`
 		} `json:"apiConfig"`
@@ -63,24 +56,29 @@ func TestGetConfigReturnsLatestConfigurationWithoutPassword(t *testing.T) {
 	if body.PollingBehavior.Interval != "250ms" {
 		t.Fatalf("interval = %q, want 250ms", body.PollingBehavior.Interval)
 	}
-	if _, present := body.ConnectConfig.AuthConfig["password"]; present {
-		t.Fatal("config response includes the password field")
-	}
 	if _, present := body.APIConfig.AuthConfig["password"]; present {
 		t.Fatal("config response includes the API password field")
 	}
-	if got := manager.GetConfiguration().ConnectConfig.AuthConfig.Password; got != "secret" {
-		t.Fatal("GET config modified the stored password")
-	}
 	if got := manager.GetConfiguration().APIConfig.AuthConfig.Password; got != "api-secret" {
 		t.Fatal("GET config modified the stored API password")
+	}
+	var fields map[string]jsontext.Value
+	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 4 {
+		t.Fatal("GET config includes fields outside application configuration")
+	}
+	for _, field := range []string{"pollingBehavior", "communicationConfig", "apiConfig", "loggingConfig"} {
+		if _, present := fields[field]; !present {
+			t.Fatalf("GET config omitted application field %q", field)
+		}
 	}
 }
 
 func TestPatchConfigAppliesPartialUpdateAndNotifiesWorkers(t *testing.T) {
 	before := config.DefaultConfiguration()
-	before.ConnectConfig.HTTPS = true
-	before.ConnectConfig.AuthConfig = config.AuthConfiguration{
+	before.APIConfig.AuthConfig = config.AuthConfiguration{
 		Enabled: true, Username: "user", Password: "secret",
 	}
 	manager := config.NewManager(before)
@@ -89,7 +87,6 @@ func TestPatchConfigAppliesPartialUpdateAndNotifiesWorkers(t *testing.T) {
 	response := httptest.NewRecorder()
 	request := newPatchRequest(`{
 		"pollingBehavior": {"interval": "30s", "restartFailedTasks": false},
-		"connectConfig": {"authConfig": {"username": "updated-user"}},
 		"loggingConfig": {"level": "DEBUG"}
 	}`)
 	handler.PatchConfig(response, request)
@@ -99,7 +96,6 @@ func TestPatchConfigAppliesPartialUpdateAndNotifiesWorkers(t *testing.T) {
 	want := before
 	want.PollingBehavior.Interval = config.Duration(30 * time.Second)
 	want.PollingBehavior.RestartFailedTasks = false
-	want.ConnectConfig.AuthConfig.Username = "updated-user"
 	if err := want.LoggingConfig.Level.UnmarshalText([]byte("DEBUG")); err != nil {
 		t.Fatal(err)
 	}
@@ -122,6 +118,9 @@ func TestPatchConfigRejectsInvalidUpdatesAtomically(t *testing.T) {
 	for _, body := range []string{
 		``, `null`, `[]`, `"string"`, `{`, `{} {}`,
 		`{"unknown":true}`,
+		`{"connectConfigs":{"production":{"host":"changed"}}}`,
+		`{"connectClusterAPIConfigurations":{"production":{"host":"changed"}}}`,
+		`{"pollingBehavior":{"interval":"30s"},"connectClusterAPIs":{}}`,
 		`{"connectConfig":{"host":"http://localhost"}}`,
 		`{"pollingBehavior":{"interval":"1s","unknown":true}}`,
 		`{"pollingBehavior":{"interval":1000}}`,
@@ -185,15 +184,15 @@ func TestPatchConfigAllowsSameKeyInSeparateObjects(t *testing.T) {
 	manager := config.NewManager(config.DefaultConfiguration())
 	response := httptest.NewRecorder()
 	request := newPatchRequest(`{
-		"connectConfig":{"authConfig":{"enabled":false,"username":"null"}},
-		"pollingBehavior":{"backoff":{"enabled":false}}
+		"pollingBehavior":{"restartFailedTasks":false,"backoff":{"enabled":false}},
+		"apiConfig":{"authConfig":{"enabled":false}}
 	}`)
 	NewConfigHandler(manager).PatchConfig(response, request)
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 	want := config.DefaultConfiguration()
-	want.ConnectConfig.AuthConfig.Username = "null"
+	want.PollingBehavior.RestartFailedTasks = false
 	want.PollingBehavior.Backoff.Enabled = false
 	if manager.GetConfiguration() != want {
 		t.Fatal("patch did not apply valid fields in separate objects")
@@ -270,12 +269,12 @@ func TestPatchConfigErrorsIdentifyFieldsWithoutValues(t *testing.T) {
 		{`{"PollingBehavior":{"Interval":123}}`, "/PollingBehavior/Interval: invalid value"},
 		{`{"loggingConfig":{"level":"sensitive-value"}}`, "/loggingConfig/level: invalid value"},
 		{`{"pollingBehavior":{"restartFailedTasks":"sensitive-value"}}`, "/pollingBehavior/restartFailedTasks: invalid value"},
-		{`{"connectConfig":{"authConfig":{"password":["sensitive-value"]}}}`, "/connectConfig/authConfig/password: invalid value"},
+		{`{"connectConfig":{"authConfig":{"password":["sensitive-value"]}}}`, "/connectConfig: unknown field"},
 		{`{"pollingBehavior":"sensitive-value"}`, "/pollingBehavior: invalid value"},
 		{`{"pollingBehavior":{"interval":"0s"}}`, "pollingBehavior.interval:"},
-		{`{"connectConfig":{"port":"sensitive-value"}}`, "connectConfig.port:"},
-		{`{"connectConfig":{"host":"changed"},"pollingBehavior":{"typo":true}}`, "/pollingBehavior/typo: unknown field"},
-		{`{"connectConfig":{"https":true,"authConfig":{"enabled":true,"username":"user"}}}`, "connectConfig.authConfig.password:"},
+		{`{"connectConfig":{"port":"sensitive-value"}}`, "/connectConfig: unknown field"},
+		{`{"pollingBehavior":{"interval":"30s","typo":true}}`, "/pollingBehavior/typo: unknown field"},
+		{`{"connectConfig":{"https":true,"authConfig":{"enabled":true,"username":"user"}}}`, "/connectConfig: unknown field"},
 		{`{"pollingBehavior":{"restartFailedTasks":true,"restartFailedTaſks":false}}`, "duplicate keys"},
 	} {
 		t.Run(test.want, func(t *testing.T) {

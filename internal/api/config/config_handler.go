@@ -49,7 +49,7 @@ func (handler *ConfigHandler) PatchConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err = handler.manager.UpdateConfiguration(func(configuration *config.Configuration) error {
+	err = handler.manager.UpdateConfiguration(func(configuration *config.ApplicationConfiguration) error {
 		return decodeConfigPatch(data, configuration)
 	})
 	if err != nil {
@@ -68,7 +68,6 @@ func (handler *ConfigHandler) GetConfig(
 	r *http.Request,
 ) {
 	configuration := handler.manager.GetConfiguration()
-	configuration.ConnectConfig.AuthConfig.Password = ""
 	configuration.APIConfig.AuthConfig.Password = ""
 
 	w.Header().Set("Content-Type", "application/json")

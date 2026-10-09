@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/backoff"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
@@ -28,7 +30,7 @@ func TestPollStopsBeforeNextTick(t *testing.T) {
 	defer cancel()
 	finished := make(chan struct{})
 	go func() {
-		Poll(ctx, config.NewManager(configuration))
+		NewConnectClusterPoller("default", connectcluster.DefaultConfiguration()).Poll(ctx, config.NewManager(configuration))
 		close(finished)
 	}()
 
@@ -69,8 +71,7 @@ func TestPollCancellationInterruptsStatusRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuration := config.DefaultConfiguration()
-	configuration.ConnectConfig.Host = serverURL.Hostname()
-	configuration.ConnectConfig.Port = serverURL.Port()
+	clusterConfiguration := connectcluster.ConnectClusterAPIConfiguration{Host: serverURL.Hostname(), Port: serverURL.Port()}
 	configuration.PollingBehavior.Interval = config.Duration(10 * time.Millisecond)
 	// A long timeout proves cancellation ends the request, rather than timeout.
 	configuration.CommunicationConfig.RequestTimeout = config.Duration(time.Hour)
@@ -78,7 +79,7 @@ func TestPollCancellationInterruptsStatusRequest(t *testing.T) {
 	defer cancel()
 	finished := make(chan struct{})
 	go func() {
-		Poll(ctx, config.NewManager(configuration))
+		NewConnectClusterPoller("test", clusterConfiguration).Poll(ctx, config.NewManager(configuration))
 		close(finished)
 	}()
 	select {
@@ -160,7 +161,7 @@ func TestFilterByBackoffs(t *testing.T) {
 				BackoffStatuses: test.statuses,
 			}
 
-			if got := FilterByBackoffs(filter, test.actions); !reflect.DeepEqual(got, test.expected) {
+			if got := FilterByBackoffs(filter, test.actions); !slices.Equal(got, test.expected) {
 				t.Fatalf("FilterByBackoffs() = %#v, want %#v", got, test.expected)
 			}
 		})
@@ -200,7 +201,7 @@ func TestResetBackoffsForHealthyStatuses(t *testing.T) {
 		"failed-connector": {Attempts: 1},
 		fmt.Sprintf(backoff.TaskKeyFormat, "failed-connector", 1): {Attempts: 1},
 	}
-	if !reflect.DeepEqual(filter.BackoffStatuses, expected) {
+	if !maps.Equal(filter.BackoffStatuses, expected) {
 		t.Fatalf("backoff statuses = %#v, want %#v", filter.BackoffStatuses, expected)
 	}
 }
@@ -260,12 +261,10 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 		t.Fatalf("parse test server URL: %v", err)
 	}
 
-	pollConfig := config.Configuration{
-		ConnectConfig: config.ConnectAPIConfiguration{
-			Host:  serverURL.Hostname(),
-			Port:  serverURL.Port(),
-			HTTPS: serverURL.Scheme == "https",
-		},
+	clusterConfiguration := connectcluster.ConnectClusterAPIConfiguration{
+		Host: serverURL.Hostname(), Port: serverURL.Port(), HTTPS: serverURL.Scheme == "https",
+	}
+	pollConfig := config.ApplicationConfiguration{
 		CommunicationConfig: config.CommunicationConfiguration{RequestTimeout: config.Duration(time.Second)},
 		PollingBehavior: config.PollingBehavior{
 			Interval:           config.Duration(10 * time.Millisecond),
@@ -278,7 +277,7 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 		},
 	}
 	go func() {
-		Poll(ctx, config.NewManager(pollConfig))
+		NewConnectClusterPoller("test", clusterConfiguration).Poll(ctx, config.NewManager(pollConfig))
 		close(finished)
 	}()
 
@@ -314,7 +313,7 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 		}
 		slices.Sort(got)
 		slices.Sort(expected)
-		if !reflect.DeepEqual(got, expected) {
+		if !slices.Equal(got, expected) {
 			t.Fatalf("%s: restart requests = %v, want %v", name, got, expected)
 		}
 	}
@@ -329,4 +328,97 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 	checkCycle("new failures are restarted", statusResponse{http.StatusOK, failedStatuses}, restarts)
 	checkCycle("status retrieval error does not reset backoff", statusResponse{http.StatusInternalServerError, ""}, nil)
 	checkCycle("failures after retrieval error remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
+}
+
+func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *testing.T) {
+	type requestEvent struct {
+		cluster string
+		method  string
+	}
+	events := make(chan requestEvent, 64)
+	configuration := config.DefaultConfiguration()
+	configuration.PollingBehavior.Interval = config.Duration(100 * time.Millisecond)
+	configuration.PollingBehavior.Backoff.BaseDelay = config.Duration(time.Hour)
+	configuration.PollingBehavior.Backoff.MaxDelay = config.Duration(time.Hour)
+	manager := config.NewManager(configuration)
+	ctx, cancel := context.WithCancel(context.Background())
+	var workers sync.WaitGroup
+	pollers := make(map[string]*ConnectClusterPoller)
+	for _, name := range []string{"production", "staging"} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			events <- requestEvent{cluster: name, method: r.Method}
+			if r.Method == http.MethodGet {
+				io.WriteString(w, `{"shared-connector":{"status":{"name":"shared-connector","connector":{"state":"FAILED"}}}}`)
+			} else {
+				w.WriteHeader(http.StatusNoContent)
+			}
+		}))
+		t.Cleanup(server.Close)
+		serverURL, err := url.Parse(server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		poller := NewConnectClusterPoller(name, connectcluster.ConnectClusterAPIConfiguration{
+			Host: serverURL.Hostname(), Port: serverURL.Port(),
+		})
+		pollers[name] = poller
+		workers.Go(func() { poller.Poll(ctx, manager) })
+	}
+	finished := make(chan struct{})
+	go func() { workers.Wait(); close(finished) }()
+	stop := func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Fatal("cluster pollers did not stop after cancellation")
+		}
+	}
+	t.Cleanup(stop)
+	readEvent := func() requestEvent {
+		t.Helper()
+		select {
+		case event := <-events:
+			return event
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for a cluster request")
+			return requestEvent{}
+		}
+	}
+	posts := make(map[string]int)
+	for posts["production"] == 0 || posts["staging"] == 0 {
+		event := readEvent()
+		if event.method == http.MethodPost {
+			posts[event.cluster]++
+		}
+	}
+	if err := manager.UpdateConfiguration(func(application *config.ApplicationConfiguration) error {
+		application.PollingBehavior.Interval = config.Duration(5 * time.Millisecond)
+		application.PollingBehavior.Backoff.Exponential = false
+		application.CommunicationConfig.RequestTimeout = config.Duration(250 * time.Millisecond)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gets := make(map[string]int)
+	for gets["production"] < 3 || gets["staging"] < 3 {
+		event := readEvent()
+		if event.method == http.MethodPost {
+			posts[event.cluster]++
+		} else {
+			gets[event.cluster]++
+		}
+	}
+	stop()
+	for name, poller := range pollers {
+		if posts[name] != 1 {
+			t.Fatalf("cluster %q made %d restarts, want one independent attempt", name, posts[name])
+		}
+		if poller.connectHTTPClient.Timeout != 250*time.Millisecond || poller.backoffFilter.BackoffConfig.Exponential {
+			t.Fatalf("cluster %q did not apply shared application settings", name)
+		}
+		if len(poller.backoffFilter.BackoffStatuses) != 1 || poller.backoffFilter.BackoffStatuses["shared-connector"].Attempts != 1 {
+			t.Fatalf("cluster %q lost its independent backoff history", name)
+		}
+	}
 }

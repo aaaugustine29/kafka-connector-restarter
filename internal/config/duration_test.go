@@ -79,7 +79,7 @@ func TestConfigurationJSONDurationStrings(t *testing.T) {
 		response.CommunicationConfig.RequestTimeout != "10s" {
 		t.Fatalf("unexpected configuration durations: %s", data)
 	}
-	var got Configuration
+	var got ApplicationConfiguration
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
@@ -90,7 +90,7 @@ func TestConfigurationJSONDurationStrings(t *testing.T) {
 
 func TestManagerUpdateFromJSON(t *testing.T) {
 	manager := NewManager(DefaultConfiguration())
-	if err := manager.UpdateConfiguration(func(configuration *Configuration) error {
+	if err := manager.UpdateConfiguration(func(configuration *ApplicationConfiguration) error {
 		return json.Unmarshal([]byte(`{
 			"pollingBehavior": {"interval": "1m30s", "restartFailedTasks": false},
 			"communicationConfig": {"requestTimeout": "1.5s"}
@@ -108,7 +108,7 @@ func TestManagerUpdateFromJSON(t *testing.T) {
 		t.Fatal("JSON update changed an omitted backoff configuration")
 	}
 	for _, value := range []string{`"0s"`, `"-1s"`, `"9223372036854775808ns"`, `1000`} {
-		err := manager.UpdateConfiguration(func(configuration *Configuration) error {
+		err := manager.UpdateConfiguration(func(configuration *ApplicationConfiguration) error {
 			return json.Unmarshal([]byte(`{"pollingBehavior":{"interval":`+value+`}}`), configuration)
 		})
 		if err == nil {

@@ -12,33 +12,33 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
 )
 
 func TestNewConnectAPIBuildsBaseURL(t *testing.T) {
 	tests := []struct {
 		name          string
-		configuration config.ConnectAPIConfiguration
+		configuration connectcluster.ConnectClusterAPIConfiguration
 		wantURL       string
 	}{
 		{
 			name:          "HTTP",
-			configuration: config.ConnectAPIConfiguration{Host: "localhost", Port: "8083"},
+			configuration: connectcluster.ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083"},
 			wantURL:       "http://localhost:8083",
 		},
 		{
 			name:          "HTTPS",
-			configuration: config.ConnectAPIConfiguration{Host: "connect.example.test", Port: "8443", HTTPS: true},
+			configuration: connectcluster.ConnectClusterAPIConfiguration{Host: "connect.example.test", Port: "8443", HTTPS: true},
 			wantURL:       "https://connect.example.test:8443",
 		},
 		{
 			name:          "IPv6",
-			configuration: config.ConnectAPIConfiguration{Host: "2001:db8::1", Port: "8083"},
+			configuration: connectcluster.ConnectClusterAPIConfiguration{Host: "2001:db8::1", Port: "8083"},
 			wantURL:       "http://[2001:db8::1]:8083",
 		},
 		{
 			name:          "scoped IPv6",
-			configuration: config.ConnectAPIConfiguration{Host: "fe80::1%eth0", Port: "8083"},
+			configuration: connectcluster.ConnectClusterAPIConfiguration{Host: "fe80::1%eth0", Port: "8083"},
 			wantURL:       "http://[fe80::1%25eth0]:8083",
 		},
 	}
@@ -77,7 +77,7 @@ func TestConnectAPIDoesNotFollowRedirects(t *testing.T) {
 				client.Timeout = 2 * time.Second
 				originalError := errors.New("original redirect policy")
 				client.CheckRedirect = func(*http.Request, []*http.Request) error { return originalError }
-				connect := NewConnectAPI(client, config.ConnectAPIConfiguration{
+				connect := NewConnectAPI(client, connectcluster.ConnectClusterAPIConfiguration{
 					Host: serverURL.Hostname(), Port: serverURL.Port(),
 				})
 				if connect.HTTPClient.Timeout != client.Timeout || connect.HTTPClient.Transport != client.Transport {
@@ -113,7 +113,7 @@ func TestConnectAPIDoesNotFollowRedirects(t *testing.T) {
 func TestConnectAPINewRequestBasicAuth(t *testing.T) {
 	tests := []struct {
 		name     string
-		auth     config.AuthConfiguration
+		auth     connectcluster.AuthConfiguration
 		expected bool
 	}{
 		{
@@ -122,7 +122,7 @@ func TestConnectAPINewRequestBasicAuth(t *testing.T) {
 		},
 		{
 			name: "enabled authentication adds credentials",
-			auth: config.AuthConfiguration{
+			auth: connectcluster.AuthConfiguration{
 				Enabled:  true,
 				Username: "connect-user",
 				Password: "connect-password",

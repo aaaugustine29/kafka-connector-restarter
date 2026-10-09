@@ -12,20 +12,10 @@ const (
 	DefaultRestartBackoffBaseDelay                   = 2 * DefaultPollingInterval
 	DefaultRestartBackoffMaxDelay           Duration = Duration(10 * time.Minute)
 	DefaultRestartBackoffExponentialEnabled          = true
-	DefaultConnectBasicAuthEnabled                   = false
 	DefaultAPIBasicAuthEnabled                       = false
 	DefaultHTTPRequestTimeout               Duration = Duration(10 * time.Second)
-	DefaultConnectAPIHost                            = "localhost"
-	DefaultConnectAPIPort                            = "8083"
-	DefaultConnectAPIHTTPS                           = false
 	DefaultLogLevel                                  = slog.LevelInfo
 )
-
-func DefaultAuthConfiguration() AuthConfiguration {
-	return AuthConfiguration{
-		Enabled: DefaultConnectBasicAuthEnabled,
-	}
-}
 
 func DefaultBackoffConfiguration() BackoffConfiguration {
 	return BackoffConfiguration{
@@ -44,16 +34,6 @@ func DefaultPollingBehavior() PollingBehavior {
 	}
 }
 
-func DefaultConnectAPIConfiguration() map[string]ConnectAPIConfiguration {
-	return map[string]ConnectAPIConfiguration{
-		"default": {
-			Host:       DefaultConnectAPIHost,
-			Port:       DefaultConnectAPIPort,
-			HTTPS:      DefaultConnectAPIHTTPS,
-			AuthConfig: DefaultAuthConfiguration(),
-		}}
-}
-
 func DefaultLoggingConfiguration() LoggingConfiguration {
 	return LoggingConfiguration{Level: DefaultLogLevel}
 }
@@ -64,11 +44,10 @@ func DefaultAPIConfiguration() APIConfiguration {
 	}
 }
 
-func DefaultConfiguration() Configuration {
-	return Configuration{
+func DefaultConfiguration() ApplicationConfiguration {
+	return ApplicationConfiguration{
 		PollingBehavior:     DefaultPollingBehavior(),
 		CommunicationConfig: DefaultCommunicationConfiguration(),
-		ConnectConfigs:      DefaultConnectAPIConfiguration(),
 		APIConfig:           DefaultAPIConfiguration(),
 		LoggingConfig:       DefaultLoggingConfiguration(),
 	}

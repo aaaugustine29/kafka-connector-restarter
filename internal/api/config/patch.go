@@ -30,7 +30,7 @@ func validatePatchJSON(data []byte) error {
 	}
 }
 
-func decodeConfigPatch(data []byte, configuration *config.Configuration) error {
+func decodeConfigPatch(data []byte, configuration *config.ApplicationConfiguration) error {
 	if err := json.Unmarshal(data, configuration,
 		json.RejectUnknownMembers(true),
 		json.MatchCaseInsensitiveNames(true),

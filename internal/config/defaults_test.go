@@ -11,9 +11,6 @@ func TestDefaultConfigurationMatchesComponentDefaults(t *testing.T) {
 	if got.PollingBehavior != DefaultPollingBehavior() {
 		t.Fatalf("PollingBehavior = %#v, want %#v", got.PollingBehavior, DefaultPollingBehavior())
 	}
-	if got.ConnectConfig != DefaultConnectAPIConfiguration() {
-		t.Fatalf("ConnectConfig = %#v, want %#v", got.ConnectConfig, DefaultConnectAPIConfiguration())
-	}
 	if got.LoggingConfig != DefaultLoggingConfiguration() {
 		t.Fatalf("LoggingConfig = %#v, want %#v", got.LoggingConfig, DefaultLoggingConfiguration())
 	}

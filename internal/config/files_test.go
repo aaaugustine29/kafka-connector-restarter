@@ -22,9 +22,7 @@ func writeConfigFile(t *testing.T, contents string) string {
 
 func TestLoadFilesDefaultsAndPartialOverlay(t *testing.T) {
 	base := writeConfigFile(t, `
-connectConfig:
-  host: connect.kafka.svc
-  https: true
+apiConfig:
   authConfig:
     enabled: true
     username: base-user
@@ -37,7 +35,7 @@ loggingConfig:
   level: DEBUG
 `)
 	overlay := writeConfigFile(t, `
-connectConfig:
+apiConfig:
   authConfig:
     username: secret-user
     password: "test-password"
@@ -52,9 +50,7 @@ pollingBehavior:
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
 	want := DefaultConfiguration()
-	want.ConnectConfig.Host = "connect.kafka.svc"
-	want.ConnectConfig.HTTPS = true
-	want.ConnectConfig.AuthConfig = AuthConfiguration{Enabled: true, Username: "secret-user", Password: "test-password"}
+	want.APIConfig.AuthConfig = AuthConfiguration{Enabled: true, Username: "secret-user", Password: "test-password"}
 	want.PollingBehavior.Interval = Duration(500 * time.Millisecond)
 	want.PollingBehavior.RestartFailedTasks = false
 	want.PollingBehavior.Backoff.BaseDelay = Duration(30 * time.Second)
@@ -107,16 +103,14 @@ apiConfig:
 
 func TestLoadFilesOverlayCanExplicitlyClearValues(t *testing.T) {
 	base := writeConfigFile(t, `
-connectConfig:
-  https: true
+apiConfig:
   authConfig:
     enabled: true
     username: base-user
     password: base-password
 `)
 	overlay := writeConfigFile(t, `
-connectConfig:
-  https: false
+apiConfig:
   authConfig:
     enabled: false
     username: ""
@@ -126,7 +120,7 @@ connectConfig:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ConnectConfig != DefaultConnectAPIConfiguration() {
+	if got.APIConfig.AuthConfig != (AuthConfiguration{}) {
 		t.Fatal("explicit false and empty strings did not clear base values")
 	}
 }
@@ -140,15 +134,15 @@ func TestLoadFilesRejectsInvalidYAMLInEitherFile(t *testing.T) {
 		{"comments only", "# no settings"},
 		{"scalar root", "hello"},
 		{"sequence root", "[]"},
-		{"malformed syntax", "connectConfig: ["},
+		{"malformed syntax", "apiConfig: ["},
 		{"multiple documents", "{}\n---\n{}"},
 		{"trailing empty document", "{}\n---"},
 		{"unknown top level", "pollingBehavour: {}"},
 		{"unknown nested field", "pollingBehavior:\n  backoff:\n    maxDely: 1m"},
-		{"duplicate top level", "connectConfig: {}\nconnectConfig: {}"},
-		{"duplicate nested field", "connectConfig:\n  host: first\n  host: second"},
+		{"duplicate top level", "apiConfig: {}\napiConfig: {}"},
+		{"duplicate nested field", "apiConfig:\n  authConfig:\n    username: first\n    username: second"},
 		{"null root", "null"},
-		{"null section", "connectConfig: null"},
+		{"null section", "apiConfig: null"},
 		{"null scalar", "pollingBehavior:\n  interval: null"},
 		{"empty scalar", "pollingBehavior:\n  restartFailedTasks:"},
 		{"numeric duration", "pollingBehavior:\n  interval: 1000"},
@@ -158,8 +152,8 @@ func TestLoadFilesRejectsInvalidYAMLInEitherFile(t *testing.T) {
 		{"invalid boolean", "pollingBehavior:\n  restartFailedTasks: perhaps"},
 		{"invalid log level", "loggingConfig:\n  level: VERBOSE"},
 		{"numeric log level", "loggingConfig:\n  level: 4"},
-		{"alias", "connectConfig:\n  host: &host connect\n  port: *host"},
-		{"merge key", "connectConfig:\n  <<: {host: connect}"},
+		{"alias", "apiConfig:\n  authConfig:\n    username: &user admin\n    password: *user"},
+		{"merge key", "apiConfig:\n  <<: {authConfig: {}}"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -170,7 +164,7 @@ func TestLoadFilesRejectsInvalidYAMLInEitherFile(t *testing.T) {
 				if err == nil {
 					t.Fatal("LoadFiles() accepted invalid YAML")
 				}
-				if got != (Configuration{}) {
+				if got != (ApplicationConfiguration{}) {
 					t.Fatal("LoadFiles() returned partial configuration on failure")
 				}
 			}
@@ -188,11 +182,6 @@ func TestLoadFilesValidatesMergedConfiguration(t *testing.T) {
 		{"pollingBehavior:\n  backoff:\n    baseDelay: 0s", "backoff base delay"},
 		{"pollingBehavior:\n  backoff:\n    maxDelay: 1s", "backoff maximum delay"},
 		{"communicationConfig:\n  requestTimeout: 0s", "HTTP request timeout"},
-		{"connectConfig:\n  host: \" \"", "Connect host"},
-		{"connectConfig:\n  host: http://localhost", "Connect host"},
-		{"connectConfig:\n  port: \"65536\"", "Connect port"},
-		{"connectConfig:\n  authConfig:\n    enabled: true", "Basic Auth requires HTTPS"},
-		{"connectConfig:\n  https: true\n  authConfig:\n    enabled: true", "Basic Auth requires a username and password"},
 		{"apiConfig:\n  authConfig:\n    enabled: true", "apiConfig.authConfig.username:"},
 		{"apiConfig:\n  authConfig:\n    enabled: true\n    username: admin", "apiConfig.authConfig.password:"},
 	} {
@@ -200,7 +189,7 @@ func TestLoadFilesValidatesMergedConfiguration(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), test.want) {
 			t.Fatalf("LoadFiles() error = %v, want %q", err, test.want)
 		}
-		if got != (Configuration{}) {
+		if got != (ApplicationConfiguration{}) {
 			t.Fatal("LoadFiles() returned invalid configuration")
 		}
 	}
@@ -219,10 +208,10 @@ func TestLoadFilesRequiresEverySpecifiedFile(t *testing.T) {
 func TestLoadFilesErrorsDoNotExposeCredentials(t *testing.T) {
 	const sensitive = "credential-that-must-not-be-logged"
 	for _, data := range []string{
-		"connectConfig:\n  authConfig:\n    password: [" + sensitive + "]",
+		"apiConfig:\n  authConfig:\n    password: [" + sensitive + "]",
 		"loggingConfig:\n  level: " + sensitive,
 		"pollingBehavior:\n  interval: " + sensitive,
-		"connectConfig:\n  authConfig:\n    password: first\n    password: " + sensitive,
+		"apiConfig:\n  authConfig:\n    password: first\n    password: " + sensitive,
 	} {
 		invalid := writeConfigFile(t, data)
 		for _, paths := range [][2]string{{invalid, ""}, {writeConfigFile(t, "{}"), invalid}} {

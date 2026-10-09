@@ -14,6 +14,7 @@ import (
 
 	"entropicworks.com/kafka-connector-restarter/internal/api"
 	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
 	"entropicworks.com/kafka-connector-restarter/internal/logging"
 	"entropicworks.com/kafka-connector-restarter/internal/poll"
 )
@@ -21,14 +22,22 @@ import (
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to the base YAML configuration")
 	secretPath := flag.String("secret-config", "", "path to an optional Secret YAML overlay")
+	clustersPath := flag.String("connect-clusters", "connect-clusters.yaml", "path to named Connect cluster configurations")
+	clustersSecretPath := flag.String("connect-clusters-secret-config", "", "path to an optional Connect cluster Secret YAML overlay")
 	flag.Parse()
 	if flag.NArg() != 0 {
-		slog.Error("unexpected positional arguments; use --config and --secret-config")
+		slog.Error("unexpected positional arguments; use configuration file flags")
 		os.Exit(1)
 	}
 	startupConfig, err := config.LoadFiles(*configPath, *secretPath)
 	if err != nil {
 		slog.Error("configuration loading failed", "error", err)
+		os.Exit(1)
+	}
+
+	clusters, err := connectcluster.LoadFiles(*clustersPath, *clustersSecretPath)
+	if err != nil {
+		slog.Error("Connect cluster configuration loading failed", "error", err)
 		os.Exit(1)
 	}
 
@@ -58,9 +67,10 @@ func main() {
 		}
 	})
 
-	for name, _ := range configuration.ConnectConfigs {
+	for name, clusterConfiguration := range clusters {
+		poller := poll.NewConnectClusterPoller(name, clusterConfiguration)
 		workers.Go(func() {
-			poll.Poll(ctx, configManager, name)
+			poller.Poll(ctx, configManager)
 		})
 	}
 

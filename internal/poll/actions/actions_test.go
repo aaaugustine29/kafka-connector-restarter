@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
+	"slices"
 	"sync/atomic"
 	"testing"
 
-	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
@@ -40,7 +40,7 @@ func TestTakeActionRejectsRedirectAndRecordsAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connect := requests.NewConnectAPI(server.Client(), config.ConnectAPIConfiguration{
+	connect := requests.NewConnectAPI(server.Client(), connectcluster.ConnectClusterAPIConfiguration{
 		Host: serverURL.Hostname(), Port: serverURL.Port(),
 	})
 	result, err := TakeAction(context.Background(), RemediationAction{
@@ -133,7 +133,7 @@ func TestDetermineActionsForConnector(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := DetermineActionsForConnector(test.connector, test.restartTasks); !reflect.DeepEqual(got, test.expected) {
+			if got := DetermineActionsForConnector(test.connector, test.restartTasks); !slices.Equal(got, test.expected) {
 				t.Fatalf("DetermineActionsForConnector() = %#v, want %#v", got, test.expected)
 			}
 		})
@@ -151,7 +151,7 @@ func TestTakeAction(t *testing.T) {
 		name             string
 		action           RemediationAction
 		expectedRequests []expectedRequest
-		auth             config.AuthConfiguration
+		auth             connectcluster.AuthConfiguration
 		expectedAuth     bool
 		wantError        bool
 	}{
@@ -185,7 +185,7 @@ func TestTakeAction(t *testing.T) {
 				rawQuery:   "includeTasks=true&onlyFailed=true",
 				statusCode: http.StatusAccepted,
 			}},
-			auth: config.AuthConfiguration{
+			auth: connectcluster.AuthConfiguration{
 				Enabled:  true,
 				Username: "connect-user",
 				Password: "connect-password",

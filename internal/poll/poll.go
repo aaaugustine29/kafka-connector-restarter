@@ -8,23 +8,37 @@ import (
 	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/backoff"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
 )
 
-func Poll(ctx context.Context, configManager *config.Manager, name string) {
+// ConnectClusterPoller owns the client and backoff state for one cluster.
+// Its mutable state is used only by its polling goroutine.
+type ConnectClusterPoller struct {
+	name                           string
+	connectHTTPClient              *http.Client
+	backoffFilter                  backoff.BackoffFilter
+	connectClusterAPIConfiguration connectcluster.ConnectClusterAPIConfiguration
+}
+
+func NewConnectClusterPoller(name string, configuration connectcluster.ConnectClusterAPIConfiguration) *ConnectClusterPoller {
+	return &ConnectClusterPoller{name: name, connectClusterAPIConfiguration: configuration}
+}
+
+func (poller *ConnectClusterPoller) Poll(ctx context.Context, configManager *config.Manager) {
 	configuration, updateChannel := configManager.ConfigurationSnapshot()
-	connectHTTPClient := &http.Client{
+	poller.connectHTTPClient = &http.Client{
 		Timeout: configuration.CommunicationConfig.RequestTimeout.Duration(),
 	}
-	connectConfig := configuration.ConnectConfigs[name]
-	connect := requests.NewConnectAPI(connectHTTPClient, connectConfig)
-	backoffFilter := backoff.BackoffFilter{
+	connect := requests.NewConnectAPI(poller.connectHTTPClient, poller.connectClusterAPIConfiguration)
+	poller.backoffFilter = backoff.BackoffFilter{
 		BackoffConfig:   configuration.PollingBehavior.Backoff,
 		BackoffStatuses: map[string]backoff.BackoffStatus{},
 	}
+	logger := slog.With("connect_cluster", poller.name)
 
 	ticker := time.NewTicker(configuration.PollingBehavior.Interval.Duration())
 	defer ticker.Stop()
@@ -32,28 +46,19 @@ func Poll(ctx context.Context, configManager *config.Manager, name string) {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("polling stopped")
+			logger.Info("polling stopped")
 			return
 		case <-updateChannel:
-			var newConfiguration config.Configuration
+			var newConfiguration config.ApplicationConfiguration
 			newConfiguration, updateChannel = configManager.ConfigurationSnapshot()
-			newConnectConfig := newConfiguration.ConnectConfigs[name]
-			if newConfiguration.CommunicationConfig != configuration.CommunicationConfig ||
-				connectConfig != connectConfig {
-				if newConfiguration.CommunicationConfig != configuration.CommunicationConfig {
-					connectHTTPClient = &http.Client{
-						Timeout: newConfiguration.CommunicationConfig.RequestTimeout.Duration(),
-					}
+			if newConfiguration.CommunicationConfig != configuration.CommunicationConfig {
+				poller.connectHTTPClient = &http.Client{
+					Timeout: newConfiguration.CommunicationConfig.RequestTimeout.Duration(),
 				}
-				if newConnectConfig.Host != connectConfig.Host ||
-					newConnectConfig.Port != connectConfig.Port ||
-					newConnectConfig.HTTPS != connectConfig.HTTPS {
-					backoffFilter.BackoffStatuses = map[string]backoff.BackoffStatus{}
-				}
-				connect = requests.NewConnectAPI(connectHTTPClient, newConnectConfig)
+				connect = requests.NewConnectAPI(poller.connectHTTPClient, poller.connectClusterAPIConfiguration)
 			}
 			if newConfiguration.PollingBehavior.Backoff != configuration.PollingBehavior.Backoff {
-				backoffFilter.BackoffConfig = newConfiguration.PollingBehavior.Backoff
+				poller.backoffFilter.BackoffConfig = newConfiguration.PollingBehavior.Backoff
 			}
 			if newConfiguration.PollingBehavior.Interval != configuration.PollingBehavior.Interval {
 				ticker.Reset(newConfiguration.PollingBehavior.Interval.Duration())
@@ -67,15 +72,15 @@ func Poll(ctx context.Context, configManager *config.Manager, name string) {
 				if ctx.Err() != nil {
 					return
 				}
-				slog.Error("poll cycle failed while retrieving connector statuses", "error", err)
+				logger.Error("poll cycle failed while retrieving connector statuses", "error", err)
 				continue
 			}
 
-			slog.Debug("connector statuses retrieved", "count", len(connectorStatuses))
-			resetBackoffsForHealthyStatuses(&backoffFilter, connectorStatuses)
+			logger.Debug("connector statuses retrieved", "count", len(connectorStatuses))
+			resetBackoffsForHealthyStatuses(&poller.backoffFilter, connectorStatuses)
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, configuration.PollingBehavior.RestartFailedTasks)
-			if backoffFilter.BackoffConfig.Enabled {
-				connectorRemediationActions = FilterByBackoffs(backoffFilter, connectorRemediationActions)
+			if poller.backoffFilter.BackoffConfig.Enabled {
+				connectorRemediationActions = FilterByBackoffs(poller.backoffFilter, connectorRemediationActions)
 			}
 			for _, remediationAction := range connectorRemediationActions {
 				if ctx.Err() != nil {
@@ -88,9 +93,9 @@ func Poll(ctx context.Context, configManager *config.Manager, name string) {
 				if result.RequestMade {
 					switch remediationAction.Kind {
 					case actions.RestartConnector:
-						backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, nil)
+						poller.backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, nil)
 					case actions.RestartTask:
-						backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, &remediationAction.TaskID)
+						poller.backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, &remediationAction.TaskID)
 					default:
 						remediationAction.Logger().Error("unsupported remediation action")
 					}

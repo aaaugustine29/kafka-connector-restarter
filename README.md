@@ -1,59 +1,79 @@
 # kafka-connector-restarter
 
-Polls the Kafka Connect REST API and restarts failed connectors. When task restarts are enabled, it also restarts failed tasks whose connector is running. Polling begins after the first interval; the service stops on SIGINT or SIGTERM.
+Polls the REST APIs of named Kafka Connect clusters and restarts failed connectors. When task restarts are enabled, it also restarts failed tasks whose connector is running. Polling begins after the first interval; the service stops on SIGINT or SIGTERM.
 
 ## Run
 
-Requires Go 1.27.1 or later. Supply a base YAML configuration file when running:
+Requires Go 1.27.1 or later. Application settings and cluster definitions are loaded from separate YAML files:
 
 ```sh
-go run ./cmd --config=/path/to/config.yaml
+go run ./cmd --config=/path/to/application.yaml --connect-clusters=/path/to/connect-clusters.yaml
 ```
 
-The repository does not include configuration files. A base file containing `{}` uses all application defaults, including the Kafka Connect endpoint `http://localhost:8083`. To also load credentials from a Secret YAML overlay:
+The repository does not include configuration files. An application file containing `{}` uses all application defaults. The cluster file is a mapping of cluster names to endpoint settings. To poll the default endpoint `http://localhost:8083`, explicitly configure `default: {}`. A cluster file containing `{}` starts no pollers; it still starts the application API.
+
+Optional Secret overlays are loaded independently:
 
 ```sh
-go run ./cmd --config=/path/to/config.yaml --secret-config=/path/to/secret-config.yaml
+go run ./cmd \
+  --config=/path/to/application.yaml \
+  --secret-config=/path/to/application-secret.yaml \
+  --connect-clusters=/path/to/connect-clusters.yaml \
+  --connect-clusters-secret-config=/path/to/connect-clusters-secret.yaml
 ```
 
-`--config` defaults to `config.yaml`, relative to the working directory. The base file is required. `--secret-config` is optional, but when supplied its file is required too. Unreadable or invalid files cause startup to fail before the HTTP server or polling starts.
+`--config` defaults to `config.yaml`, and `--connect-clusters` defaults to `connect-clusters.yaml`, relative to the working directory. Both base files are required. Each Secret overlay is optional, but its file is required when its flag is supplied. Unreadable or invalid files cause startup to fail before the HTTP server or polling starts.
 
-The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns the current configuration without passwords. Optional API authentication protects all routes. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed.
+The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns application settings without the API password. Cluster definitions are not exposed by the application API. Optional API authentication protects all routes. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed.
 
 API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection and backoff skips are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Normal shutdown cancellation does not generate polling failure logs.
 
 ## Configuration
 
-Configuration is read once at startup, in this order:
+Both configuration packages read their own files once at startup, in this order:
 
-1. Application defaults.
-2. The base YAML file, normally mounted from a Kubernetes ConfigMap.
-3. The optional Secret YAML overlay, normally mounted from a Kubernetes Secret.
+1. Defaults for application settings or an explicitly named cluster.
+2. The corresponding base YAML file, normally mounted from a Kubernetes ConfigMap.
+3. Its optional Secret YAML overlay, normally mounted from a Kubernetes Secret.
 
-Both files use the same schema. Each explicitly supplied field replaces its previous value, including `false` and empty strings. Omitted fields retain their previous values; an empty mapping (`{}`) changes nothing. A supplied nested mapping only changes the fields it contains, rather than replacing the entire section. The overlay can change any configuration field, although its intended purpose is supplying credentials.
-
-The merged configuration is validated after both files have been loaded, so a base file can enable authentication and leave credentials for the overlay. Keep actual credentials outside version control and out of ConfigMaps. A Secret overlay can supply credentials as follows:
+Application settings live in `internal/config`; cluster configuration lives in `internal/connectcluster`. The files use independent schemas. Application settings remain at the root of the application file, with sections such as `pollingBehavior` and `apiConfig`. The cluster file contains named entries:
 
 ```yaml
-connectConfig:
+production:
+  host: connect.production.svc
+  port: "8083"
+  https: true
   authConfig:
     enabled: true
+staging:
+  host: connect.staging.svc
+```
+
+The map key identifies the cluster; there is no separate `name` field. Only explicitly configured clusters are created. Each new cluster starts with endpoint defaults, so the staging entry above retains port `8083` and disables HTTPS and authentication.
+
+Each supplied field replaces its previous value, including `false` and empty strings. Omitted fields retain their previous values; an empty mapping (`{}`) changes nothing. A supplied nested mapping changes only its supplied fields. Cluster overlays merge each named entry onto that cluster's existing values, preserving its endpoint and omitted credentials. An overlay may add a named cluster or change any field.
+
+Each merged configuration is validated after its base file and overlay have been loaded, so the base can enable authentication and leave credentials for the overlay. Keep actual credentials outside version control and out of ConfigMaps. A cluster Secret overlay can supply credentials as follows:
+
+```yaml
+production:
+  authConfig:
     username: replace-me
     password: replace-me
 ```
 
-Basic authentication requires `connectConfig.https: true`, a nonblank username, and a nonempty password. Invalid combinations fail startup; authentication is never silently disabled.
+Cluster Basic Auth requires `https: true`, a nonblank username, and a nonempty password. Invalid combinations fail startup; authentication is never silently disabled. All clusters share the application's polling behavior, request timeout, and logging policy, while maintaining independent restart backoff history.
 
 The available settings and defaults are:
 
 | YAML field | Default |
 | --- | --- |
-| `connectConfig.host` | `localhost` |
-| `connectConfig.port` | `"8083"` |
-| `connectConfig.https` | `false` |
-| `connectConfig.authConfig.enabled` | `false` |
-| `connectConfig.authConfig.username` | empty string |
-| `connectConfig.authConfig.password` | empty string |
+| `<cluster>.host` | `localhost` |
+| `<cluster>.port` | `"8083"` |
+| `<cluster>.https` | `false` |
+| `<cluster>.authConfig.enabled` | `false` |
+| `<cluster>.authConfig.username` | empty string |
+| `<cluster>.authConfig.password` | empty string |
 | `apiConfig.authConfig.enabled` | `false` |
 | `apiConfig.authConfig.username` | empty string |
 | `apiConfig.authConfig.password` | empty string |
@@ -66,7 +86,7 @@ The available settings and defaults are:
 | `pollingBehavior.backoff.exponential` | `true` |
 | `loggingConfig.level` | `INFO` |
 
-`connectConfig.host` is a DNS hostname or unbracketed IP address (for example, `kafka-connect`, `127.0.0.1`, or `2001:db8::1`), without a URL scheme, port, path, or whitespace. Invalid host syntax is rejected at startup and in runtime updates. `connectConfig.port` is a string such as `"8083"`. `loggingConfig.level` accepts Go slog levels such as `DEBUG`, `INFO`, `WARN`, and `ERROR`. Connect requests do not follow redirects; a redirect is treated as an unsuccessful status rather than allowing a restart POST to become a GET or send credentials to another endpoint.
+In the cluster file, `<cluster>.host` is a DNS hostname or unbracketed IP address (for example, `kafka-connect`, `127.0.0.1`, or `2001:db8::1`), without a URL scheme, port, path, or whitespace. Invalid host syntax is rejected at startup. `<cluster>.port` is a string such as `"8083"`. In the application file, `loggingConfig.level` accepts Go slog levels such as `DEBUG`, `INFO`, `WARN`, and `ERROR`. Connect requests do not follow redirects; a redirect is treated as an unsuccessful status rather than allowing a restart POST to become a GET or send credentials to another endpoint.
 
 Durations are positive strings with units, such as `250ms`, `10s`, `1.5s`, or `1m30s`. Supported units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, and `h`. Numeric, invalid, nonpositive, or overflowing durations are rejected. The maximum backoff delay must be at least the base delay. The default base delay is `20s`, independently of any configured polling interval.
 
@@ -74,23 +94,23 @@ Each file must contain exactly one YAML mapping document. Unknown keys, duplicat
 
 ### Migration from environment variables
 
-The application no longer reads `RESTARTER_*` environment variables. Move their values into the corresponding YAML fields and mount the file. For example, `RESTARTER_POLL_INTERVAL=30s` becomes `pollingBehavior.interval: 30s`, and the basic-auth username and password become `connectConfig.authConfig.username` and `connectConfig.authConfig.password` in the Secret overlay. Remove the old environment entries from the Deployment to avoid misleading configuration.
+The application no longer reads `RESTARTER_*` environment variables. Move their values into the corresponding YAML fields and mount the file. For example, `RESTARTER_POLL_INTERVAL=30s` becomes `pollingBehavior.interval: 30s`, and Connect credentials become `<cluster>.authConfig.username` and `<cluster>.authConfig.password` in the cluster Secret overlay. Move endpoint settings into a named entry in the cluster file. Remove the old environment entries from the Deployment to avoid misleading configuration.
 
 ## Kubernetes
 
-Mount the base YAML file from a ConfigMap and the optional overlay from a Secret, using read-only directory mounts. Pass their paths through `--config` and `--secret-config` in the container arguments. The image entrypoint must launch the application binary. If authentication is unnecessary, omit the Secret and `--secret-config` argument.
+Mount the application and cluster base files from a ConfigMap and their optional overlays from a Secret, using read-only directory mounts. A single ConfigMap can contain both base files, and a single Secret can contain both overlays. Pass the file paths through the corresponding command-line flags. The image entrypoint must launch the application binary. If credentials are unnecessary, omit the corresponding Secret overlay flags.
 
-For Kustomize deployments, generate the ConfigMap and Secret from the two YAML files and keep generated name hashes enabled. Changes to either input file generate a new resource name and update the Deployment's volume reference when applied, triggering replacement of the pod. This makes base configuration and credential changes follow the same deployment process. See [Kustomize generators](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/).
+For Kustomize deployments, generate the ConfigMap and Secret from these YAML files and keep generated name hashes enabled. Changes to input files generate a new resource name and update the Deployment's volume reference when applied, triggering replacement of the pod. This makes configuration and credential changes follow the same deployment process. See [Kustomize generators](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/).
 
 Use one replica and the `Recreate` strategy to avoid overlapping pollers issuing duplicate restart requests during updates. Updates include a brief polling interruption and reset the application's in-memory restart backoff history.
 
-For Helm deployments, mount the same two files and use pod-template checksum annotations for both chart-managed ConfigMaps and Secrets. Independently managed Secret changes also need an explicit pod restart or a deployment controller that triggers one. See [Helm's rollout guidance](https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments).
+For Helm deployments, mount the same files and use pod-template checksum annotations for both chart-managed ConfigMaps and Secrets. Independently managed Secret changes also need an explicit pod restart or a deployment controller that triggers one. See [Helm's rollout guidance](https://helm.sh/docs/howto/charts_tips_and_tricks/#automatically-roll-deployments).
 
 Configuration is only read at startup. Updating a mounted file does not change the running application's configuration; restart the pod to apply it. Mounting files does not require the application to access the Kubernetes API. See [ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/) and [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/).
 
 ## Restart backoff
 
-Backoff is tracked separately for each connector restart and each task restart. With exponential backoff enabled, the delay after attempt number `n` is `min(base delay × 2^(n−1), maximum delay)`. For example, the default delays begin at 20 seconds, then 40 seconds, 80 seconds, and so on up to 10 minutes. When exponential backoff is disabled, each attempt uses the base delay. Failed connectors are restarted regardless of `pollingBehavior.restartFailedTasks`; that setting controls failed tasks whose connector is running.
+Backoff is tracked separately for each cluster, connector restart, and task restart. Identical connector names in different clusters do not share backoff state. With exponential backoff enabled, the delay after attempt number `n` is `min(base delay × 2^(n−1), maximum delay)`. For example, the default delays begin at 20 seconds, then 40 seconds, 80 seconds, and so on up to 10 minutes. When exponential backoff is disabled, each attempt uses the base delay. Failed connectors are restarted regardless of `pollingBehavior.restartFailedTasks`; that setting controls failed tasks whose connector is running.
 
 Every outbound restart request counts as an attempt, including requests that return errors. A `RUNNING` connector clears its connector backoff, and a `RUNNING` task clears that task's backoff; a future failure then starts again at the base delay. If status retrieval fails, no actions or resets happen on that poll.
 
@@ -119,9 +139,9 @@ API authentication is startup-only: PATCH cannot enable, disable, or change its 
 
 Basic Auth does not encrypt credentials. The service still listens using HTTP; use a trusted TLS-terminating ingress/proxy and restrict direct backend access. Protect the proxy-to-service connection as appropriate for your deployment, and do not expose the unauthenticated default API to untrusted networks. See [Go's Basic Auth documentation](https://pkg.go.dev/net/http#Request.SetBasicAuth).
 
-`GET /config` returns the effective configuration as JSON, omits both API and Connect authentication passwords, and sets `Cache-Control: no-store` to prevent caching. Durations use the same string format as YAML, with Go's canonical spelling (for example, `10m` is written as `10m0s`). Numeric JSON durations are rejected.
+`GET /config` returns only the effective application configuration as JSON, omits the API authentication password, and sets `Cache-Control: no-store` to prevent caching. Durations use the same string format as YAML, with Go's canonical spelling (for example, `10m` is written as `10m0s`). Numeric JSON durations are rejected.
 
-`PATCH /config` accepts a partial JSON object using the same field names and requires `Content-Type: application/json` (parameters such as `charset=utf-8` are accepted). Missing, malformed, or unsupported content types return `415` with `Accept-Patch: application/json`. Supplied fields replace their current values; omitted fields retain them, including an omitted authentication password. The complete resulting configuration must pass the same validation as startup. Invalid updates return `400` without changing stored values. Field errors identify the affected path without exposing submitted values. Successful updates return `204 No Content` and notify the polling and logging workers. Bodies larger than 64 KiB return `413`; body-read timeouts return `408`.
+`PATCH /config` accepts a partial application JSON object using the same field names and requires `Content-Type: application/json` (parameters such as `charset=utf-8` are accepted). Missing, malformed, or unsupported content types return `415` with `Accept-Patch: application/json`. Supplied fields replace their current values; omitted fields retain them, including an omitted API authentication password. The complete resulting configuration must pass the same validation as startup. Invalid updates return `400` without changing stored values. Field errors identify the affected path without exposing submitted values. Successful updates return `204 No Content` and notify the polling and logging workers. Bodies larger than 64 KiB return `413`; body-read timeouts return `408`.
 
 ```sh
 curl -X PATCH http://localhost:8080/config \
@@ -129,9 +149,9 @@ curl -X PATCH http://localhost:8080/config \
   -d '{"pollingBehavior":{"interval":"30s","restartFailedTasks":false}}'
 ```
 
-JSON handling uses Go's `encoding/json/v2`. Null values and duplicate keys are rejected at every nesting level. Duplicate checking also catches escaped spellings and casing differences such as `interval` and `Interval`. Repeating a key in separate objects is allowed. Unknown fields and invalid UTF-8 are rejected too. JSON decoding errors use JSON Pointer paths, such as `/pollingBehavior/interval`; configuration validation errors use dotted paths.
+JSON handling uses Go's `encoding/json/v2`. Null values and duplicate keys are rejected at every nesting level. Duplicate checking also catches escaped spellings and casing differences such as `interval` and `Interval`. Repeating a key in separate objects is allowed. Unknown fields and invalid UTF-8 are rejected too. Cluster configuration fields are unknown to this endpoint and return `400`. JSON decoding errors use JSON Pointer paths, such as `/pollingBehavior/interval`; configuration validation errors use dotted paths.
 
-Updates affect only the running process. Startup YAML files are never modified, and restarting restores configuration from those files.
+Application updates affect only the running process. YAML files are never modified, and restarting restores configuration from those files. Cluster membership, endpoints, and credentials are startup-only; update their YAML files and restart to change them.
 
 ## Tests
 

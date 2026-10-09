@@ -44,10 +44,6 @@ func TestAPIAuthentication(t *testing.T) {
 				before.APIConfig.AuthConfig = config.AuthConfiguration{
 					Enabled: true, Username: "api-user", Password: "api-secret",
 				}
-				before.ConnectConfig.HTTPS = true
-				before.ConnectConfig.AuthConfig = config.AuthConfiguration{
-					Enabled: true, Username: "connect-user", Password: "connect-secret",
-				}
 				manager := config.NewManager(before)
 				_, changes := manager.ConfigurationSnapshot()
 				server := NewServer(APIComponents{ConfigManager: manager})
