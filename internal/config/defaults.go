@@ -13,6 +13,7 @@ const (
 	DefaultRestartBackoffMaxDelay           Duration = Duration(10 * time.Minute)
 	DefaultRestartBackoffExponentialEnabled          = true
 	DefaultConnectBasicAuthEnabled                   = false
+	DefaultAPIBasicAuthEnabled                       = false
 	DefaultHTTPRequestTimeout               Duration = Duration(10 * time.Second)
 	DefaultConnectAPIHost                            = "localhost"
 	DefaultConnectAPIPort                            = "8083"
@@ -56,11 +57,18 @@ func DefaultLoggingConfiguration() LoggingConfiguration {
 	return LoggingConfiguration{Level: DefaultLogLevel}
 }
 
+func DefaultAPIConfiguration() APIConfiguration {
+	return APIConfiguration{
+		AuthConfig: AuthConfiguration{Enabled: DefaultAPIBasicAuthEnabled},
+	}
+}
+
 func DefaultConfiguration() Configuration {
 	return Configuration{
 		PollingBehavior:     DefaultPollingBehavior(),
 		CommunicationConfig: DefaultCommunicationConfiguration(),
 		ConnectConfig:       DefaultConnectAPIConfiguration(),
+		APIConfig:           DefaultAPIConfiguration(),
 		LoggingConfig:       DefaultLoggingConfiguration(),
 	}
 }

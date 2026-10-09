@@ -78,6 +78,33 @@ func TestLoadFilesWithoutOverlay(t *testing.T) {
 	}
 }
 
+func TestLoadFilesAPIAuthenticationSecretOverlay(t *testing.T) {
+	base := writeConfigFile(t, `
+apiConfig:
+  authConfig:
+    enabled: true
+    username: base-user
+`)
+	overlay := writeConfigFile(t, `
+apiConfig:
+  authConfig:
+    username: api-user
+    password: api-secret
+`)
+	got, err := LoadFiles(base, overlay)
+	if err != nil {
+		t.Fatalf("LoadFiles() error = %v", err)
+	}
+	want := DefaultConfiguration()
+	want.APIConfig.AuthConfig = AuthConfiguration{Enabled: true, Username: "api-user", Password: "api-secret"}
+	if got != want {
+		t.Fatal("API authentication overlay changed unrelated configuration")
+	}
+	if _, err := LoadFiles(base, ""); err == nil || !strings.Contains(err.Error(), "apiConfig.authConfig.password:") {
+		t.Fatalf("missing API credentials accepted or error lacked field: %v", err)
+	}
+}
+
 func TestLoadFilesOverlayCanExplicitlyClearValues(t *testing.T) {
 	base := writeConfigFile(t, `
 connectConfig:
@@ -166,6 +193,8 @@ func TestLoadFilesValidatesMergedConfiguration(t *testing.T) {
 		{"connectConfig:\n  port: \"65536\"", "Connect port"},
 		{"connectConfig:\n  authConfig:\n    enabled: true", "Basic Auth requires HTTPS"},
 		{"connectConfig:\n  https: true\n  authConfig:\n    enabled: true", "Basic Auth requires a username and password"},
+		{"apiConfig:\n  authConfig:\n    enabled: true", "apiConfig.authConfig.username:"},
+		{"apiConfig:\n  authConfig:\n    enabled: true\n    username: admin", "apiConfig.authConfig.password:"},
 	} {
 		got, err := LoadFiles(writeConfigFile(t, "{}"), writeConfigFile(t, test.data))
 		if err == nil || !strings.Contains(err.Error(), test.want) {

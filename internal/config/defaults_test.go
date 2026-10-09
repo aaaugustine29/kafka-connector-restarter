@@ -17,4 +17,7 @@ func TestDefaultConfigurationMatchesComponentDefaults(t *testing.T) {
 	if got.LoggingConfig != DefaultLoggingConfiguration() {
 		t.Fatalf("LoggingConfig = %#v, want %#v", got.LoggingConfig, DefaultLoggingConfiguration())
 	}
+	if got.APIConfig != DefaultAPIConfiguration() || got.APIConfig.AuthConfig.Enabled {
+		t.Fatal("API authentication should match its defaults and be disabled")
+	}
 }

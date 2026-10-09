@@ -18,7 +18,7 @@ go run ./cmd --config=/path/to/config.yaml --secret-config=/path/to/secret-confi
 
 `--config` defaults to `config.yaml`, relative to the working directory. The base file is required. `--secret-config` is optional, but when supplied its file is required too. Unreadable or invalid files cause startup to fail before the HTTP server or polling starts.
 
-The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns the current configuration without the password. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed.
+The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns the current configuration without passwords. Optional API authentication protects all routes. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed.
 
 API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection and backoff skips are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Normal shutdown cancellation does not generate polling failure logs.
 
@@ -54,6 +54,9 @@ The available settings and defaults are:
 | `connectConfig.authConfig.enabled` | `false` |
 | `connectConfig.authConfig.username` | empty string |
 | `connectConfig.authConfig.password` | empty string |
+| `apiConfig.authConfig.enabled` | `false` |
+| `apiConfig.authConfig.username` | empty string |
+| `apiConfig.authConfig.password` | empty string |
 | `communicationConfig.requestTimeout` | `10s` |
 | `pollingBehavior.interval` | `10s` |
 | `pollingBehavior.restartFailedTasks` | `true` |
@@ -93,7 +96,30 @@ Every outbound restart request counts as an attempt, including requests that ret
 
 ## Configuration API
 
-`GET /config` returns the effective configuration as JSON, omits the authentication password, and sets `Cache-Control: no-store` to prevent caching. Durations use the same string format as YAML, with Go's canonical spelling (for example, `10m` is written as `10m0s`). Numeric JSON durations are rejected.
+API Basic Auth is disabled by default and is independent of Kafka Connect authentication. To enable it, put this in the base configuration:
+
+```yaml
+apiConfig:
+  authConfig:
+    enabled: true
+```
+
+Supply credentials in the Secret YAML overlay, not the ConfigMap:
+
+```yaml
+apiConfig:
+  authConfig:
+    username: restarter-admin
+    password: replace-me
+```
+
+Enabled API authentication requires a nonblank username without a colon and a nonempty password; otherwise startup fails. Missing, malformed, or incorrect credentials return `401 Unauthorized` with a Basic Auth challenge before any route handler runs. All routes require the same credentials. Clients can use `curl --user restarter-admin https://your-restarter-host/config` to be prompted for the password. Credentials are never included in authentication error responses or logs.
+
+API authentication is startup-only: PATCH cannot enable, disable, or change its credentials. Update the startup files and restart to apply those changes. Resubmitting identical API settings is a no-op and is allowed.
+
+Basic Auth does not encrypt credentials. The service still listens using HTTP; use a trusted TLS-terminating ingress/proxy and restrict direct backend access. Protect the proxy-to-service connection as appropriate for your deployment, and do not expose the unauthenticated default API to untrusted networks. See [Go's Basic Auth documentation](https://pkg.go.dev/net/http#Request.SetBasicAuth).
+
+`GET /config` returns the effective configuration as JSON, omits both API and Connect authentication passwords, and sets `Cache-Control: no-store` to prevent caching. Durations use the same string format as YAML, with Go's canonical spelling (for example, `10m` is written as `10m0s`). Numeric JSON durations are rejected.
 
 `PATCH /config` accepts a partial JSON object using the same field names and requires `Content-Type: application/json` (parameters such as `charset=utf-8` are accepted). Missing, malformed, or unsupported content types return `415` with `Accept-Patch: application/json`. Supplied fields replace their current values; omitted fields retain them, including an omitted authentication password. The complete resulting configuration must pass the same validation as startup. Invalid updates return `400` without changing stored values. Field errors identify the affected path without exposing submitted values. Successful updates return `204 No Content` and notify the polling and logging workers. Bodies larger than 64 KiB return `413`; body-read timeouts return `408`.
 

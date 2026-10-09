@@ -36,7 +36,12 @@ type Configuration struct {
 	PollingBehavior     PollingBehavior            `json:"pollingBehavior" yaml:"pollingBehavior"`
 	CommunicationConfig CommunicationConfiguration `json:"communicationConfig" yaml:"communicationConfig"`
 	ConnectConfig       ConnectAPIConfiguration    `json:"connectConfig" yaml:"connectConfig"`
+	APIConfig           APIConfiguration           `json:"apiConfig" yaml:"apiConfig"`
 	LoggingConfig       LoggingConfiguration       `json:"loggingConfig" yaml:"loggingConfig"`
+}
+
+type APIConfiguration struct {
+	AuthConfig AuthConfiguration `json:"authConfig" yaml:"authConfig"`
 }
 
 type LoggingConfiguration struct {

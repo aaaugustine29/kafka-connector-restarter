@@ -16,6 +16,7 @@ type APIComponents struct {
 
 func NewServer(components APIComponents) *http.Server {
 	configHandler := configAPI.NewConfigHandler(components.ConfigManager)
+	configuration := components.ConfigManager.GetConfiguration()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", home.HomeHandler)
@@ -23,7 +24,7 @@ func NewServer(components APIComponents) *http.Server {
 	mux.HandleFunc("PATCH /config", configHandler.PatchConfig)
 	return &http.Server{
 		Addr:              ":8080",
-		Handler:           mux,
+		Handler:           basicAuth(mux, configuration.APIConfig.AuthConfig),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      10 * time.Second,

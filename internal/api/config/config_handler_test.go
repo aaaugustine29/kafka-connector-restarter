@@ -24,6 +24,9 @@ func TestGetConfigReturnsLatestConfigurationWithoutPassword(t *testing.T) {
 	configuration.ConnectConfig.AuthConfig = config.AuthConfiguration{
 		Enabled: true, Username: "user", Password: "secret",
 	}
+	configuration.APIConfig.AuthConfig = config.AuthConfiguration{
+		Enabled: true, Username: "api-user", Password: "api-secret",
+	}
 	manager := config.NewManager(configuration)
 	handler := NewConfigHandler(manager)
 	if err := manager.UpdateConfiguration(func(configuration *config.Configuration) error {
@@ -50,6 +53,9 @@ func TestGetConfigReturnsLatestConfigurationWithoutPassword(t *testing.T) {
 		ConnectConfig struct {
 			AuthConfig map[string]jsontext.Value `json:"authConfig"`
 		} `json:"connectConfig"`
+		APIConfig struct {
+			AuthConfig map[string]jsontext.Value `json:"authConfig"`
+		} `json:"apiConfig"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode config response: %v", err)
@@ -60,8 +66,14 @@ func TestGetConfigReturnsLatestConfigurationWithoutPassword(t *testing.T) {
 	if _, present := body.ConnectConfig.AuthConfig["password"]; present {
 		t.Fatal("config response includes the password field")
 	}
+	if _, present := body.APIConfig.AuthConfig["password"]; present {
+		t.Fatal("config response includes the API password field")
+	}
 	if got := manager.GetConfiguration().ConnectConfig.AuthConfig.Password; got != "secret" {
 		t.Fatal("GET config modified the stored password")
+	}
+	if got := manager.GetConfiguration().APIConfig.AuthConfig.Password; got != "api-secret" {
+		t.Fatal("GET config modified the stored API password")
 	}
 }
 

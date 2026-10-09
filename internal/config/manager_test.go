@@ -22,6 +22,57 @@ func TestManagerUpdateCommitsSingleValue(t *testing.T) {
 	}
 }
 
+func TestValidateAPIAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		auth AuthConfiguration
+		want string
+	}{
+		{name: "disabled"},
+		{name: "valid", auth: AuthConfiguration{Enabled: true, Username: "api-user", Password: "api-secret"}},
+		{name: "missing username", auth: AuthConfiguration{Enabled: true, Password: "api-secret"}, want: "apiConfig.authConfig.username:"},
+		{name: "blank username", auth: AuthConfiguration{Enabled: true, Username: " ", Password: "api-secret"}, want: "apiConfig.authConfig.username:"},
+		{name: "colon in username", auth: AuthConfiguration{Enabled: true, Username: "api:user", Password: "api-secret"}, want: "apiConfig.authConfig.username:"},
+		{name: "missing password", auth: AuthConfiguration{Enabled: true, Username: "api-user"}, want: "apiConfig.authConfig.password:"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			configuration := DefaultConfiguration()
+			configuration.APIConfig.AuthConfig = test.auth
+			err := ValidateConfiguration(configuration)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("valid API authentication rejected: %v", err)
+				}
+			} else if err == nil || !strings.HasPrefix(err.Error(), test.want) {
+				t.Fatalf("validation error = %v, want %q", err, test.want)
+			}
+			if err != nil && strings.Contains(err.Error(), "api-secret") {
+				t.Fatal("validation error exposed API credentials")
+			}
+		})
+	}
+}
+
+func TestManagerRejectsEnablingAPIAuthenticationAtRuntime(t *testing.T) {
+	manager := NewManager(DefaultConfiguration())
+	before, changes := manager.ConfigurationSnapshot()
+	err := manager.UpdateConfiguration(func(c *Configuration) error {
+		c.APIConfig.AuthConfig = AuthConfiguration{Enabled: true, Username: "user", Password: "secret"}
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "startup-only") {
+		t.Fatalf("error = %v, want startup-only error", err)
+	}
+	if manager.GetConfiguration() != before {
+		t.Fatal("API auth update changed configuration")
+	}
+	select {
+	case <-changes:
+		t.Fatal("rejected API auth update notified workers")
+	default:
+	}
+}
+
 func TestManagerValidatesConnectHost(t *testing.T) {
 	for _, host := range []string{
 		"localhost", "kafka-connect", "connect.kafka.svc.cluster.local", "connect.example.test.",

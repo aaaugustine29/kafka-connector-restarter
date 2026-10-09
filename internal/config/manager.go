@@ -44,6 +44,9 @@ func (m *Manager) UpdateConfiguration(changeConfig func(*Configuration) error) e
 	if err := changeConfig(&next); err != nil {
 		return err
 	}
+	if next.APIConfig != m.config.APIConfig {
+		return fmt.Errorf("apiConfig: API authentication is startup-only; update the YAML configuration and restart")
+	}
 	if err := ValidateConfiguration(next); err != nil {
 		return err
 	}
@@ -73,6 +76,16 @@ func ValidateConfiguration(config Configuration) error {
 
 	if config.CommunicationConfig.RequestTimeout <= 0 {
 		return fmt.Errorf("communicationConfig.requestTimeout: HTTP request timeout must be greater than zero")
+	}
+
+	apiAuth := config.APIConfig.AuthConfig
+	if apiAuth.Enabled {
+		if strings.TrimSpace(apiAuth.Username) == "" || strings.Contains(apiAuth.Username, ":") {
+			return fmt.Errorf("apiConfig.authConfig.username: API Basic Auth requires a nonblank username without a colon")
+		}
+		if apiAuth.Password == "" {
+			return fmt.Errorf("apiConfig.authConfig.password: API Basic Auth requires a password")
+		}
 	}
 
 	connectConfig := config.ConnectConfig

@@ -69,6 +69,7 @@ func (handler *ConfigHandler) GetConfig(
 ) {
 	configuration := handler.manager.GetConfiguration()
 	configuration.ConnectConfig.AuthConfig.Password = ""
+	configuration.APIConfig.AuthConfig.Password = ""
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
