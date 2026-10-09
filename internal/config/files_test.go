@@ -162,6 +162,7 @@ func TestLoadFilesValidatesMergedConfiguration(t *testing.T) {
 		{"pollingBehavior:\n  backoff:\n    maxDelay: 1s", "backoff maximum delay"},
 		{"communicationConfig:\n  requestTimeout: 0s", "HTTP request timeout"},
 		{"connectConfig:\n  host: \" \"", "Connect host"},
+		{"connectConfig:\n  host: http://localhost", "Connect host"},
 		{"connectConfig:\n  port: \"65536\"", "Connect port"},
 		{"connectConfig:\n  authConfig:\n    enabled: true", "Basic Auth requires HTTPS"},
 		{"connectConfig:\n  https: true\n  authConfig:\n    enabled: true", "Basic Auth requires a username and password"},

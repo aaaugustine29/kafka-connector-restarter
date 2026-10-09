@@ -2,8 +2,15 @@ package requests
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/config"
 )
@@ -29,6 +36,11 @@ func TestNewConnectAPIBuildsBaseURL(t *testing.T) {
 			configuration: config.ConnectAPIConfiguration{Host: "2001:db8::1", Port: "8083"},
 			wantURL:       "http://[2001:db8::1]:8083",
 		},
+		{
+			name:          "scoped IPv6",
+			configuration: config.ConnectAPIConfiguration{Host: "fe80::1%eth0", Port: "8083"},
+			wantURL:       "http://[fe80::1%25eth0]:8083",
+		},
 	}
 
 	for _, test := range tests {
@@ -38,6 +50,63 @@ func TestNewConnectAPIBuildsBaseURL(t *testing.T) {
 				t.Fatalf("BaseURL = %q, want %q", connect.BaseURL, test.wantURL)
 			}
 		})
+	}
+}
+
+func TestConnectAPIDoesNotFollowRedirects(t *testing.T) {
+	for _, code := range []int{301, 302, 303, 307, 308} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(method+"/"+strconv.Itoa(code), func(t *testing.T) {
+				var targetRequests atomic.Int32
+				target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					targetRequests.Add(1)
+					w.WriteHeader(http.StatusOK)
+				}))
+				defer target.Close()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Location", target.URL)
+					w.WriteHeader(code)
+					io.WriteString(w, "original redirect response")
+				}))
+				defer server.Close()
+				serverURL, err := url.Parse(server.URL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				client := server.Client()
+				client.Timeout = 2 * time.Second
+				originalError := errors.New("original redirect policy")
+				client.CheckRedirect = func(*http.Request, []*http.Request) error { return originalError }
+				connect := NewConnectAPI(client, config.ConnectAPIConfiguration{
+					Host: serverURL.Hostname(), Port: serverURL.Port(),
+				})
+				if connect.HTTPClient.Timeout != client.Timeout || connect.HTTPClient.Transport != client.Transport {
+					t.Fatal("Connect client did not preserve the timeout and transport")
+				}
+				if err := client.CheckRedirect(nil, nil); !errors.Is(err, originalError) {
+					t.Fatal("NewConnectAPI changed the caller's redirect policy")
+				}
+				request, err := connect.NewRequest(context.Background(), method, connect.BaseURL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				response, err := connect.HTTPClient.Do(request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer response.Body.Close()
+				body, err := io.ReadAll(response.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.StatusCode != code || string(body) != "original redirect response" {
+					t.Fatalf("response = (%d, %q), want original redirect response", response.StatusCode, body)
+				}
+				if targetRequests.Load() != 0 {
+					t.Fatal("Connect client followed the redirect")
+				}
+			})
+		}
 	}
 }
 

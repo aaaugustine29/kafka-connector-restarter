@@ -22,6 +22,53 @@ func TestManagerUpdateCommitsSingleValue(t *testing.T) {
 	}
 }
 
+func TestManagerValidatesConnectHost(t *testing.T) {
+	for _, host := range []string{
+		"localhost", "kafka-connect", "connect.kafka.svc.cluster.local", "connect.example.test.",
+		"CONNECT.example.test", "127.0.0.1", "2001:db8::1", "::1", "fe80::1%eth0",
+	} {
+		t.Run("valid/"+host, func(t *testing.T) {
+			manager := NewManager(DefaultConfiguration())
+			if err := manager.UpdateConfiguration(func(c *Configuration) error {
+				c.ConnectConfig.Host = host
+				return nil
+			}); err != nil {
+				t.Fatalf("valid host rejected: %v", err)
+			}
+			if manager.GetConfiguration().ConnectConfig.Host != host {
+				t.Fatal("accepted host was not stored")
+			}
+		})
+	}
+	for _, host := range []string{
+		"http://localhost", "https://connect.example.test", "localhost:8083", "connect/path", "connect\\path",
+		"connect?query", "connect#fragment", "user@connect", "[::1]", "[::1]:8083", "2001:db8::invalid",
+		" connect", "connect ", "con nect", "connect\t", "connect\n", "con\x00nect", "con\u00a0nect",
+		"connect%2Fpath", ".", "connect..example", "-connect", "connect-", "con_nect", "connect..",
+		strings.Repeat("a", 64) + ".example", strings.Repeat("a.", 128) + "test",
+	} {
+		t.Run("invalid/"+host, func(t *testing.T) {
+			manager := NewManager(DefaultConfiguration())
+			before, changes := manager.ConfigurationSnapshot()
+			err := manager.UpdateConfiguration(func(c *Configuration) error {
+				c.ConnectConfig.Host = host
+				return nil
+			})
+			if err == nil || !strings.HasPrefix(err.Error(), "connectConfig.host:") {
+				t.Fatalf("host validation error = %v, want connectConfig.host error", err)
+			}
+			if manager.GetConfiguration() != before {
+				t.Fatal("invalid host changed the stored configuration")
+			}
+			select {
+			case <-changes:
+				t.Fatal("invalid host notified subscribers")
+			default:
+			}
+		})
+	}
+}
+
 func TestManagerUpdateRejectsChangeAtomically(t *testing.T) {
 	manager := NewManager(DefaultConfiguration())
 	before, changes := manager.ConfigurationSnapshot()

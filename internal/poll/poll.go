@@ -43,6 +43,11 @@ func Poll(ctx context.Context, configManager *config.Manager) {
 						Timeout: newConfiguration.CommunicationConfig.RequestTimeout.Duration(),
 					}
 				}
+				if newConfiguration.ConnectConfig.Host != configuration.ConnectConfig.Host ||
+					newConfiguration.ConnectConfig.Port != configuration.ConnectConfig.Port ||
+					newConfiguration.ConnectConfig.HTTPS != configuration.ConnectConfig.HTTPS {
+					backoffFilter.BackoffStatuses = map[string]backoff.BackoffStatus{}
+				}
 				connect = requests.NewConnectAPI(connectHTTPClient, newConfiguration.ConnectConfig)
 			}
 			if newConfiguration.PollingBehavior.Backoff != configuration.PollingBehavior.Backoff {

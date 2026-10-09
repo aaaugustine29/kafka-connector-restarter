@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"entropicworks.com/kafka-connector-restarter/internal/config"
@@ -22,6 +23,38 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (function roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return function(request)
+}
+
+func TestTakeActionRejectsRedirectAndRecordsAttempt(t *testing.T) {
+	var loginRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			loginRequests.Add(1)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.Redirect(w, r, "/login", http.StatusFound)
+	}))
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connect := requests.NewConnectAPI(server.Client(), config.ConnectAPIConfiguration{
+		Host: serverURL.Hostname(), Port: serverURL.Port(),
+	})
+	result, err := TakeAction(context.Background(), RemediationAction{
+		ConnectorName: "source-connector", Kind: RestartConnector,
+	}, connect)
+	if err == nil {
+		t.Fatal("redirected remediation request was reported as accepted")
+	}
+	if result.StatusCode != http.StatusFound || !result.RequestMade || result.AttemptedAt.IsZero() {
+		t.Fatalf("result = %#v, want the original 302 and a recorded attempt", result)
+	}
+	if loginRequests.Load() != 0 {
+		t.Fatal("remediation request followed the redirect to the login page")
+	}
 }
 
 func TestDetermineActionsForConnector(t *testing.T) {

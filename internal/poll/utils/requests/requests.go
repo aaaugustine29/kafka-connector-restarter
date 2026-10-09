@@ -16,13 +16,19 @@ type ConnectAPI struct {
 }
 
 func NewConnectAPI(httpClient *http.Client, configuration config.ConnectAPIConfiguration) ConnectAPI {
+	// Keep the caller's client unchanged while preventing redirected requests.
+	client := *httpClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
 	scheme := "http"
 	if configuration.HTTPS {
 		scheme = "https"
 	}
 
 	return ConnectAPI{
-		HTTPClient: httpClient,
+		HTTPClient: &client,
 		BaseURL: (&url.URL{
 			Scheme: scheme,
 			Host:   net.JoinHostPort(configuration.Host, configuration.Port),

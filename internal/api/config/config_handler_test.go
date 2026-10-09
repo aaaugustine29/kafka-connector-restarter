@@ -110,6 +110,7 @@ func TestPatchConfigRejectsInvalidUpdatesAtomically(t *testing.T) {
 	for _, body := range []string{
 		``, `null`, `[]`, `"string"`, `{`, `{} {}`,
 		`{"unknown":true}`,
+		`{"connectConfig":{"host":"http://localhost"}}`,
 		`{"pollingBehavior":{"interval":"1s","unknown":true}}`,
 		`{"pollingBehavior":{"interval":1000}}`,
 		`{"pollingBehavior":{"interval":"0s"},"connectConfig":{"host":"changed"}}`,
