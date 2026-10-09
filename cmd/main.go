@@ -62,9 +62,15 @@ func main() {
 
 	configManager := config.NewManager(startupConfig)
 	configuration := configManager.GetConfiguration()
+	clusterManager, err := poll.NewClusterManager(ctx, configManager, clusters)
+	if err != nil {
+		slog.Error("Connect cluster manager startup failed", "error", err)
+		os.Exit(1)
+	}
 
 	apiComponents := api.APIComponents{
-		ConfigManager: configManager,
+		ConfigManager:  configManager,
+		ClusterManager: clusterManager,
 	}
 	server := api.NewServer(apiComponents)
 	apiLogger := slog.With("component", "api", "address", server.Addr)
@@ -78,13 +84,6 @@ func main() {
 			apiLogger.Debug("API listener stopped")
 		}
 	})
-
-	for name, clusterConfiguration := range clusters {
-		poller := poll.NewConnectClusterPoller(name, clusterConfiguration)
-		workers.Go(func() {
-			poller.Poll(ctx, configManager)
-		})
-	}
 
 	workers.Go(func() {
 		configuration, configUpdateChannel := configManager.ConfigurationSnapshot()
@@ -103,6 +102,7 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("Kafka connector restarter stopping")
+	clusterManager.Close()
 
 	const shutdownTimeout = 5 * time.Second
 	shutdownStarted := time.Now()

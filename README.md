@@ -30,7 +30,7 @@ go run ./cmd \
 
 Both base files and each Secret overlay are optional, but any explicitly supplied file is required. No files are discovered automatically. Unreadable or invalid files cause startup to fail before the HTTP server or polling starts; an invalid file does not fall back to defaults. An application Secret overlay can be supplied without a base file and merges onto application defaults.
 
-The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns application settings without the API password. Cluster definitions are not exposed by the application API. Optional API authentication protects all routes. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed. API logs include `component=api` and the listening address. Shutdown logs report the grace period, completion duration, and any failure or forced connection closure; the listener stopping is logged separately at DEBUG while active requests may still be finishing.
+The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, `GET /config` returns application settings without the API password, and `GET /clusters` returns cluster definitions without passwords. Optional API authentication protects all routes. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed. API logs include `component=api` and the listening address. Shutdown logs report the grace period, completion duration, and any failure or forced connection closure; the listener stopping is logged separately at DEBUG while active requests may still be finishing.
 
 API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. All polling, restart, and backoff logs include `connect_cluster` and `endpoint`; action logs also identify the connector and, for task restarts, `task_id`. Startup logs report the configured cluster count and source, and each poller logs its effective settings, changes, and shutdown at INFO. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection, backoff skips, and poll-cycle counts and durations are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Authentication credentials are omitted. Normal shutdown cancellation does not generate polling failure logs.
 
@@ -159,7 +159,25 @@ curl -X PATCH http://localhost:8080/config \
 
 JSON handling uses Go's `encoding/json/v2`. Null values and duplicate keys are rejected at every nesting level. Duplicate checking also catches escaped spellings and casing differences such as `interval` and `Interval`. Repeating a key in separate objects is allowed. Unknown fields and invalid UTF-8 are rejected too. Cluster configuration fields are unknown to this endpoint and return `400`. JSON decoding errors use JSON Pointer paths, such as `/pollingBehavior/interval`; configuration validation errors use dotted paths.
 
-Application updates affect only the running process. YAML files are never modified, and restarting restores configuration from those files. Cluster membership, endpoints, and credentials are startup-only; update their YAML files and restart to change them.
+Application updates affect only the running process. YAML files are never modified, and restarting restores configuration from those files.
+
+### Cluster management
+
+`GET /clusters` returns a JSON object keyed by cluster name, omits passwords, and sets `Cache-Control: no-store`. An empty collection is returned as `{}`.
+
+`PUT /clusters/{name}` creates or replaces one complete cluster definition; it does not merge with the existing definition or apply YAML defaults. Host and port are required, and enabled authentication requires HTTPS and supplied credentials. Omitted fields become their zero values, including an omitted password; there is no password-preservation behavior. Invalid definitions leave the current poller untouched. PUT requires `Content-Type: application/json` and rejects unknown fields, duplicate keys, null values, invalid UTF-8, and malformed JSON. Bodies larger than 64 KiB return `413`, unsupported content types return `415`, and body-read timeouts return `408`.
+
+Creating a cluster returns `201 Created` with a `Location` header. Replacing a cluster returns `204 No Content`: the old poller is canceled and awaited before its replacement starts with a new client and fresh backoff history. An identical definition returns `204` without replacing the poller or resetting its history. Other clusters are unchanged. Duplicate endpoints produce a warning but are allowed.
+
+```sh
+curl -X PUT http://localhost:8080/clusters/production \
+  -H 'Content-Type: application/json' \
+  -d '{"host":"connect.production.svc","port":"8083","https":false,"authConfig":{"enabled":false}}'
+```
+
+`DELETE /clusters/{name}` cancels that cluster's poller, waits for it to exit, and removes its definition before returning `204`. An unknown name returns `404`. Removal stops future polling but cannot undo restart requests already accepted by Kafka Connect. PUT and DELETE return `503` when the application is shutting down. New pollers use the application's lifetime context, so completing an API request does not stop them.
+
+Cluster updates are also in-memory only. Startup YAML files remain untouched, and restarting restores the definitions from those files. API authentication settings remain startup-only.
 
 ## Tests
 

@@ -35,12 +35,12 @@ func LoadFiles(basePath, secretPath string) (map[string]ConnectClusterAPIConfigu
 			return nil, fmt.Errorf("cluster %q: %w", name, err)
 		}
 	}
-	warnDuplicateEndpoints(clusters)
+	WarnDuplicateEndpoints(clusters)
 	return clusters, nil
 }
 
-// Compare literal endpoints without DNS lookups or including credentials.
-func warnDuplicateEndpoints(clusters map[string]ConnectClusterAPIConfiguration) {
+// WarnDuplicateEndpoints compares literal endpoints without DNS lookups or credentials.
+func WarnDuplicateEndpoints(clusters map[string]ConnectClusterAPIConfiguration) {
 	seen := make(map[string]string)
 	for _, name := range slices.Sorted(maps.Keys(clusters)) {
 		configuration := clusters[name]

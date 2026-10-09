@@ -532,7 +532,7 @@ func TestBlockedClusterDoesNotStopOtherPollers(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("blocked cluster did not start its request")
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case <-requests:
 		case <-time.After(time.Second):

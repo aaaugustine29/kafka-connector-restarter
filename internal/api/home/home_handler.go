@@ -29,6 +29,21 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 			Path:          "/config",
 			Functionality: "updates runtime configuration",
 		},
+		{
+			Method:        "GET",
+			Path:          "/clusters",
+			Functionality: "retrieves configured Connect clusters without passwords",
+		},
+		{
+			Method:        "PUT",
+			Path:          "/clusters/{name}",
+			Functionality: "creates or replaces a Connect cluster and its poller",
+		},
+		{
+			Method:        "DELETE",
+			Path:          "/clusters/{name}",
+			Functionality: "stops and removes a Connect cluster",
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
