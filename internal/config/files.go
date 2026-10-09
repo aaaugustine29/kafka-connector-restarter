@@ -6,12 +6,14 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/yamlconfig"
 )
 
-// LoadFiles loads application defaults, a required base file, and an optional
+// LoadFiles loads application defaults, an optional base file, and an optional
 // Secret overlay. No configuration is returned unless the merged values are valid.
 func LoadFiles(basePath, secretPath string) (ApplicationConfiguration, error) {
 	configuration := DefaultConfiguration()
-	if err := decodeFile(basePath, &configuration); err != nil {
-		return ApplicationConfiguration{}, fmt.Errorf("base configuration: %w", err)
+	if basePath != "" {
+		if err := decodeFile(basePath, &configuration); err != nil {
+			return ApplicationConfiguration{}, fmt.Errorf("base configuration: %w", err)
+		}
 	}
 	if secretPath != "" {
 		if err := decodeFile(secretPath, &configuration); err != nil {

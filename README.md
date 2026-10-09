@@ -4,13 +4,19 @@ Polls the REST APIs of named Kafka Connect clusters and restarts failed connecto
 
 ## Run
 
-Requires Go 1.27.1 or later. Application settings and optional cluster definitions are loaded from separate YAML files:
+Requires Go 1.27.1 or later. Run with all default values:
+
+```sh
+go run ./cmd
+```
+
+Supply optional application settings and cluster definitions using separate YAML files:
 
 ```sh
 go run ./cmd --config=/path/to/application.yaml --connect-clusters=/path/to/connect-clusters.yaml
 ```
 
-The repository does not include configuration files. An application file containing `{}` uses all application defaults. Omit `--connect-clusters` to poll one cluster named `default` at `http://localhost:8083`. To supply cluster definitions, use a file containing a mapping of cluster names to endpoint settings. A cluster file containing `{}` starts no pollers; it still starts the application API.
+The repository does not include configuration files. Omit `--config` to use all application defaults; an application file containing `{}` has the same effect. Omit `--connect-clusters` to poll one cluster named `default` at `http://localhost:8083`. To supply cluster definitions, use a file containing a mapping of cluster names to endpoint settings. A cluster file containing `{}` starts no pollers; it still starts the application API.
 
 Optional Secret overlays are loaded independently:
 
@@ -22,7 +28,7 @@ go run ./cmd \
   --connect-clusters-secret-config=/path/to/connect-clusters-secret.yaml
 ```
 
-`--config` defaults to `config.yaml`, relative to the working directory, and the application base file is required. The cluster base file and each Secret overlay are optional, but any explicitly supplied file is required. Unreadable or invalid files cause startup to fail before the HTTP server or polling starts; an invalid cluster file does not fall back to defaults.
+Both base files and each Secret overlay are optional, but any explicitly supplied file is required. No files are discovered automatically. Unreadable or invalid files cause startup to fail before the HTTP server or polling starts; an invalid file does not fall back to defaults. An application Secret overlay can be supplied without a base file and merges onto application defaults.
 
 The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns application settings without the API password. Cluster definitions are not exposed by the application API. Optional API authentication protects all routes. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed.
 
@@ -33,7 +39,7 @@ API connections have a five-second header timeout, a five-second timeout for rea
 Both configuration packages read their own files once at startup, in this order:
 
 1. Application defaults; for clusters, a single `default` cluster when no base file is supplied, or endpoint defaults for each named cluster in a supplied file.
-2. The corresponding base YAML file, normally mounted from a Kubernetes ConfigMap (optional for clusters).
+2. Its optional base YAML file, normally mounted from a Kubernetes ConfigMap.
 3. Its optional Secret YAML overlay, normally mounted from a Kubernetes Secret.
 
 Application settings live in `internal/config`; cluster configuration lives in `internal/connectcluster`. The files use independent schemas. Application settings remain at the root of the application file, with sections such as `pollingBehavior` and `apiConfig`. The cluster file contains named entries:
@@ -98,7 +104,7 @@ The application no longer reads `RESTARTER_*` environment variables. Move their 
 
 ## Kubernetes
 
-Mount the application and cluster base files from a ConfigMap and their optional overlays from a Secret, using read-only directory mounts. A single ConfigMap can contain both base files, and a single Secret can contain both overlays. Pass the file paths through the corresponding command-line flags. The image entrypoint must launch the application binary. If credentials are unnecessary, omit the corresponding Secret overlay flags.
+Mount any application and cluster base files from a ConfigMap and their optional overlays from a Secret, using read-only directory mounts. A single ConfigMap can contain both base files, and a single Secret can contain both overlays. Pass the file paths through the corresponding command-line flags. The image entrypoint must launch the application binary. If defaults suffice, omit the corresponding file flags and mounts.
 
 For Kustomize deployments, generate the ConfigMap and Secret from these YAML files and keep generated name hashes enabled. Changes to input files generate a new resource name and update the Deployment's volume reference when applied, triggering replacement of the pod. This makes configuration and credential changes follow the same deployment process. See [Kustomize generators](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/).
 

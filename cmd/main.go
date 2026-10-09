@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "config.yaml", "path to the base YAML configuration")
+	configPath := flag.String("config", "", "path to optional application YAML configuration; omitted uses defaults")
 	secretPath := flag.String("secret-config", "", "path to an optional Secret YAML overlay")
 	clustersPath := flag.String("connect-clusters", "", "path to optional named Connect cluster configurations; omitted uses localhost:8083")
 	clustersSecretPath := flag.String("connect-clusters-secret-config", "", "path to an optional Connect cluster Secret YAML overlay")

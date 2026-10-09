@@ -63,14 +63,28 @@ pollingBehavior:
 }
 
 func TestLoadFilesWithoutOverlay(t *testing.T) {
-	for _, contents := range []string{"{}", "pollingBehavior:\n  backoff: {}\n"} {
-		got, err := LoadFiles(writeConfigFile(t, contents), "")
+	for _, path := range []string{"", writeConfigFile(t, "{}"), writeConfigFile(t, "pollingBehavior:\n  backoff: {}\n")} {
+		got, err := LoadFiles(path, "")
 		if err != nil {
 			t.Fatalf("LoadFiles() error = %v", err)
 		}
 		if got != DefaultConfiguration() {
 			t.Fatal("omitted fields did not retain defaults")
 		}
+	}
+}
+
+func TestLoadFilesOverlayWithoutBase(t *testing.T) {
+	overlay := writeConfigFile(t, "pollingBehavior:\n  interval: 30s\nloggingConfig:\n  level: DEBUG")
+	got, err := LoadFiles("", overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := DefaultConfiguration()
+	want.PollingBehavior.Interval = Duration(30 * time.Second)
+	want.LoggingConfig.Level = slog.LevelDebug
+	if got != want {
+		t.Fatal("overlay without a base file did not preserve defaults and apply supplied values")
 	}
 }
 
@@ -159,7 +173,7 @@ func TestLoadFilesRejectsInvalidYAMLInEitherFile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			invalid := writeConfigFile(t, test.data)
 			valid := writeConfigFile(t, "{}")
-			for _, paths := range [][2]string{{invalid, ""}, {valid, invalid}} {
+			for _, paths := range [][2]string{{invalid, ""}, {valid, invalid}, {"", invalid}} {
 				got, err := LoadFiles(paths[0], paths[1])
 				if err == nil {
 					t.Fatal("LoadFiles() accepted invalid YAML")
@@ -198,7 +212,7 @@ func TestLoadFilesValidatesMergedConfiguration(t *testing.T) {
 func TestLoadFilesRequiresEverySpecifiedFile(t *testing.T) {
 	valid := writeConfigFile(t, "{}")
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
-	for _, paths := range [][2]string{{"", ""}, {missing, ""}, {valid, missing}, {t.TempDir(), ""}} {
+	for _, paths := range [][2]string{{"", missing}, {missing, ""}, {valid, missing}, {t.TempDir(), ""}} {
 		if _, err := LoadFiles(paths[0], paths[1]); err == nil {
 			t.Fatal("LoadFiles() accepted a missing or unreadable file")
 		}
