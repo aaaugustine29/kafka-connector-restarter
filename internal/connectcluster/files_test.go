@@ -17,6 +17,34 @@ func writeConfigFile(t *testing.T, contents string) string {
 	return path
 }
 
+func TestLoadFilesWithoutBaseUsesDefaultCluster(t *testing.T) {
+	got, err := LoadFiles("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]ConnectClusterAPIConfiguration{"default": DefaultConfiguration()}
+	if !maps.Equal(got, want) {
+		t.Fatalf("clusters = %#v, want %#v", got, want)
+	}
+}
+
+func TestLoadFilesOverlayWithoutBase(t *testing.T) {
+	overlay := writeConfigFile(t, "default:\n  host: connect.local\nstaging: {}")
+	got, err := LoadFiles("", overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultCluster := DefaultConfiguration()
+	defaultCluster.Host = "connect.local"
+	want := map[string]ConnectClusterAPIConfiguration{
+		"default": defaultCluster,
+		"staging": DefaultConfiguration(),
+	}
+	if !maps.Equal(got, want) {
+		t.Fatalf("clusters = %#v, want %#v", got, want)
+	}
+}
+
 func TestLoadFilesDefaultsAndPartialOverlay(t *testing.T) {
 	base := writeConfigFile(t, `
 production:
@@ -51,7 +79,6 @@ production:
 	if _, err := LoadFiles(base, ""); err == nil || !strings.Contains(err.Error(), `cluster "production": authConfig.password:`) {
 		t.Fatalf("missing credentials error = %v", err)
 	}
-
 }
 
 func TestLoadFilesClusterMembershipAndEmptyMappings(t *testing.T) {
@@ -130,7 +157,7 @@ func TestLoadFilesErrorsDoNotExposeCredentials(t *testing.T) {
 func TestLoadFilesRequiresEverySpecifiedFile(t *testing.T) {
 	valid := writeConfigFile(t, "production: {}")
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
-	for _, paths := range [][2]string{{"", ""}, {missing, ""}, {valid, missing}, {t.TempDir(), ""}} {
+	for _, paths := range [][2]string{{"", missing}, {missing, ""}, {valid, missing}, {t.TempDir(), ""}} {
 		if got, err := LoadFiles(paths[0], paths[1]); err == nil || got != nil {
 			t.Fatal("missing or unreadable file was accepted")
 		}

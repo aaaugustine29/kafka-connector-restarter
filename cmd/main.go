@@ -22,7 +22,7 @@ import (
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to the base YAML configuration")
 	secretPath := flag.String("secret-config", "", "path to an optional Secret YAML overlay")
-	clustersPath := flag.String("connect-clusters", "connect-clusters.yaml", "path to named Connect cluster configurations")
+	clustersPath := flag.String("connect-clusters", "", "path to optional named Connect cluster configurations; omitted uses localhost:8083")
 	clustersSecretPath := flag.String("connect-clusters-secret-config", "", "path to an optional Connect cluster Secret YAML overlay")
 	flag.Parse()
 	if flag.NArg() != 0 {
@@ -34,11 +34,23 @@ func main() {
 		slog.Error("configuration loading failed", "error", err)
 		os.Exit(1)
 	}
+	loggingLevel := new(slog.LevelVar)
+	loggingLevel.Set(startupConfig.LoggingConfig.Level)
+	logging.Configure(loggingLevel)
 
 	clusters, err := connectcluster.LoadFiles(*clustersPath, *clustersSecretPath)
 	if err != nil {
 		slog.Error("Connect cluster configuration loading failed", "error", err)
 		os.Exit(1)
+	}
+	clusterSource := *clustersPath
+	if clusterSource == "" {
+		clusterSource = "defaults"
+	}
+	if len(clusters) == 0 {
+		slog.Info("no Connect clusters configured; polling disabled", "cluster_config_source", clusterSource)
+	} else {
+		slog.Info("Connect clusters configured", "cluster_count", len(clusters), "cluster_config_source", clusterSource)
 	}
 
 	ctx, stop := signal.NotifyContext(
@@ -51,10 +63,6 @@ func main() {
 	configManager := config.NewManager(startupConfig)
 	configuration := configManager.GetConfiguration()
 
-	loggingLevel := new(slog.LevelVar)
-	loggingLevel.Set(configuration.LoggingConfig.Level)
-	logging.Configure(loggingLevel)
-
 	apiComponents := api.APIComponents{
 		ConfigManager: configManager,
 	}
@@ -62,6 +70,7 @@ func main() {
 	var workers sync.WaitGroup
 
 	workers.Go(func() {
+		slog.Info("starting API server", "address", server.Addr, "authentication_enabled", configuration.APIConfig.AuthConfig.Enabled)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("API serving failed; polling will continue", "error", err)
 		}

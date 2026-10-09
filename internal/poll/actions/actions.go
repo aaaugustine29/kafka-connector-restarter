@@ -19,8 +19,8 @@ type RemediationAction struct {
 	TaskID        int
 }
 
-func (action RemediationAction) Logger() *slog.Logger {
-	logger := slog.With("action", action.Kind, "connector", action.ConnectorName)
+func (action RemediationAction) Logger(parent *slog.Logger) *slog.Logger {
+	logger := parent.With("action", action.Kind, "connector", action.ConnectorName)
 	if action.Kind == RestartTask {
 		logger = logger.With("task_id", action.TaskID)
 	}
@@ -48,6 +48,7 @@ const (
 func DetermineActionsForConnector(
 	status status.ConnectorStatus,
 	restartTasks bool,
+	logger *slog.Logger,
 ) []RemediationAction {
 	var actions []RemediationAction
 	if strings.EqualFold(status.Connector.State, "RUNNING") {
@@ -59,7 +60,7 @@ func DetermineActionsForConnector(
 						Kind:          RestartTask,
 						TaskID:        task.ID,
 					})
-					slog.Debug("failed task detected", "connector", status.Name, "task_id", task.ID)
+					logger.Debug("failed task detected", "connector", status.Name, "task_id", task.ID)
 				}
 			}
 		}
@@ -69,17 +70,17 @@ func DetermineActionsForConnector(
 			Kind:          RestartConnector,
 			TaskID:        0,
 		})
-		slog.Debug("failed connector detected", "connector", status.Name)
+		logger.Debug("failed connector detected", "connector", status.Name)
 	} else {
-		slog.Debug("connector is not eligible for remediation", "connector", status.Name, "state", status.Connector.State)
+		logger.Debug("connector is not eligible for remediation", "connector", status.Name, "state", status.Connector.State)
 	}
 	return actions
 }
 
-func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, restartTasks bool) []RemediationAction {
+func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, restartTasks bool, logger *slog.Logger) []RemediationAction {
 	var connectorActions []RemediationAction
 	for _, status := range statuses {
-		connectorActions = append(connectorActions, DetermineActionsForConnector(status, restartTasks)...)
+		connectorActions = append(connectorActions, DetermineActionsForConnector(status, restartTasks, logger)...)
 	}
 	return connectorActions
 }
@@ -96,7 +97,7 @@ func generateRemediationActionURL(connect requests.ConnectAPI, action Remediatio
 	}
 }
 
-func TakeAction(ctx context.Context, remediationAction RemediationAction, connect requests.ConnectAPI) (RemediationActionResult, error) {
+func TakeAction(ctx context.Context, remediationAction RemediationAction, connect requests.ConnectAPI, logger *slog.Logger) (RemediationActionResult, error) {
 	requestURL, err := generateRemediationActionURL(connect, remediationAction)
 	if err != nil {
 		return RemediationActionResult{
@@ -104,7 +105,7 @@ func TakeAction(ctx context.Context, remediationAction RemediationAction, connec
 		}, err
 	}
 
-	logger := remediationAction.Logger()
+	logger = remediationAction.Logger(logger)
 	logger.Info("sending remediation request")
 	result, err := makeActionRequest(ctx, connect, requestURL)
 	if err != nil {

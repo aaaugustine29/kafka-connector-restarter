@@ -6,12 +6,17 @@ import (
 	"entropicworks.com/kafka-connector-restarter/internal/yamlconfig"
 )
 
-// LoadFiles applies per-cluster defaults, a required base file, then an optional
-// Secret overlay. Values are validated only after both files have been merged.
+// LoadFiles applies per-cluster defaults, an optional base file, then an optional
+// Secret overlay. Omitting the base file starts with the default localhost cluster.
+// Values are validated only after both files have been merged.
 func LoadFiles(basePath, secretPath string) (map[string]ConnectClusterAPIConfiguration, error) {
 	clusters := make(map[string]ConnectClusterAPIConfiguration)
-	if err := decodeFile(basePath, clusters); err != nil {
-		return nil, fmt.Errorf("base cluster configuration: %w", err)
+	if basePath == "" {
+		clusters["default"] = DefaultConfiguration()
+	} else {
+		if err := decodeFile(basePath, clusters); err != nil {
+			return nil, fmt.Errorf("base cluster configuration: %w", err)
+		}
 	}
 	if secretPath != "" {
 		if err := decodeFile(secretPath, clusters); err != nil {

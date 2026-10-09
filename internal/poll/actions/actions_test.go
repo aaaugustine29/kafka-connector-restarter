@@ -45,7 +45,7 @@ func TestTakeActionRejectsRedirectAndRecordsAttempt(t *testing.T) {
 	})
 	result, err := TakeAction(context.Background(), RemediationAction{
 		ConnectorName: "source-connector", Kind: RestartConnector,
-	}, connect)
+	}, connect, slog.Default())
 	if err == nil {
 		t.Fatal("redirected remediation request was reported as accepted")
 	}
@@ -133,7 +133,7 @@ func TestDetermineActionsForConnector(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := DetermineActionsForConnector(test.connector, test.restartTasks); !slices.Equal(got, test.expected) {
+			if got := DetermineActionsForConnector(test.connector, test.restartTasks, slog.Default()); !slices.Equal(got, test.expected) {
 				t.Fatalf("DetermineActionsForConnector() = %#v, want %#v", got, test.expected)
 			}
 		})
@@ -264,7 +264,7 @@ func TestTakeAction(t *testing.T) {
 				BaseURL:    server.URL,
 				Auth:       test.auth,
 			}
-			result, err := TakeAction(context.Background(), test.action, connect)
+			result, err := TakeAction(context.Background(), test.action, connect, slog.Default())
 			if (err != nil) != test.wantError {
 				t.Fatalf("TakeAction() error = %v, want error = %t", err, test.wantError)
 			}
@@ -309,6 +309,7 @@ func TestTakeActionRecordsFailedRequest(t *testing.T) {
 		context.Background(),
 		RemediationAction{ConnectorName: "source-connector", Kind: RestartConnector},
 		connect,
+		slog.Default(),
 	)
 	if err == nil {
 		t.Fatal("TakeAction() error = nil, want an error")
@@ -358,16 +359,17 @@ func TestGenerateRemediationActionURLEscapesConnectorName(t *testing.T) {
 }
 
 func TestRemediationActionLoggerTaskID(t *testing.T) {
-	previousLogger := slog.Default()
-	defer slog.SetDefault(previousLogger)
 	for _, kind := range []ActionKind{RestartConnector, RestartTask} {
 		t.Run(string(kind), func(t *testing.T) {
 			var logs bytes.Buffer
-			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
-			RemediationAction{ConnectorName: "connector", Kind: kind, TaskID: 0}.Logger().Info("test")
+			logger := slog.New(slog.NewJSONHandler(&logs, nil)).With("connect_cluster", "production")
+			RemediationAction{ConnectorName: "connector", Kind: kind, TaskID: 0}.Logger(logger).Info("test")
 			var record map[string]jsontext.Value
 			if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
 				t.Fatal(err)
+			}
+			if string(record["connect_cluster"]) != `"production"` {
+				t.Fatal("action logger lost the cluster identity")
 			}
 			taskID, present := record["task_id"]
 			if present != (kind == RestartTask) {

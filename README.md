@@ -4,13 +4,13 @@ Polls the REST APIs of named Kafka Connect clusters and restarts failed connecto
 
 ## Run
 
-Requires Go 1.27.1 or later. Application settings and cluster definitions are loaded from separate YAML files:
+Requires Go 1.27.1 or later. Application settings and optional cluster definitions are loaded from separate YAML files:
 
 ```sh
 go run ./cmd --config=/path/to/application.yaml --connect-clusters=/path/to/connect-clusters.yaml
 ```
 
-The repository does not include configuration files. An application file containing `{}` uses all application defaults. The cluster file is a mapping of cluster names to endpoint settings. To poll the default endpoint `http://localhost:8083`, explicitly configure `default: {}`. A cluster file containing `{}` starts no pollers; it still starts the application API.
+The repository does not include configuration files. An application file containing `{}` uses all application defaults. Omit `--connect-clusters` to poll one cluster named `default` at `http://localhost:8083`. To supply cluster definitions, use a file containing a mapping of cluster names to endpoint settings. A cluster file containing `{}` starts no pollers; it still starts the application API.
 
 Optional Secret overlays are loaded independently:
 
@@ -22,18 +22,18 @@ go run ./cmd \
   --connect-clusters-secret-config=/path/to/connect-clusters-secret.yaml
 ```
 
-`--config` defaults to `config.yaml`, and `--connect-clusters` defaults to `connect-clusters.yaml`, relative to the working directory. Both base files are required. Each Secret overlay is optional, but its file is required when its flag is supplied. Unreadable or invalid files cause startup to fail before the HTTP server or polling starts.
+`--config` defaults to `config.yaml`, relative to the working directory, and the application base file is required. The cluster base file and each Secret overlay are optional, but any explicitly supplied file is required. Unreadable or invalid files cause startup to fail before the HTTP server or polling starts; an invalid cluster file does not fall back to defaults.
 
 The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, and `GET /config` returns application settings without the API password. Cluster definitions are not exposed by the application API. Optional API authentication protects all routes. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed.
 
-API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection and backoff skips are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Normal shutdown cancellation does not generate polling failure logs.
+API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. All polling, restart, and backoff logs include `connect_cluster` and `endpoint`; action logs also identify the connector and, for task restarts, `task_id`. Startup logs report the configured cluster count and source, and each poller logs its effective settings, changes, and shutdown at INFO. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection, backoff skips, and poll-cycle counts and durations are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Authentication credentials are omitted. Normal shutdown cancellation does not generate polling failure logs.
 
 ## Configuration
 
 Both configuration packages read their own files once at startup, in this order:
 
-1. Defaults for application settings or an explicitly named cluster.
-2. The corresponding base YAML file, normally mounted from a Kubernetes ConfigMap.
+1. Application defaults; for clusters, a single `default` cluster when no base file is supplied, or endpoint defaults for each named cluster in a supplied file.
+2. The corresponding base YAML file, normally mounted from a Kubernetes ConfigMap (optional for clusters).
 3. Its optional Secret YAML overlay, normally mounted from a Kubernetes Secret.
 
 Application settings live in `internal/config`; cluster configuration lives in `internal/connectcluster`. The files use independent schemas. Application settings remain at the root of the application file, with sections such as `pollingBehavior` and `apiConfig`. The cluster file contains named entries:
@@ -49,9 +49,9 @@ staging:
   host: connect.staging.svc
 ```
 
-The map key identifies the cluster; there is no separate `name` field. Only explicitly configured clusters are created. Each new cluster starts with endpoint defaults, so the staging entry above retains port `8083` and disables HTTPS and authentication.
+The map key identifies the cluster; there is no separate `name` field. When a cluster base file is supplied, only its entries and those added by its overlay are created. Each new cluster starts with endpoint defaults, so the staging entry above retains port `8083` and disables HTTPS and authentication.
 
-Each supplied field replaces its previous value, including `false` and empty strings. Omitted fields retain their previous values; an empty mapping (`{}`) changes nothing. A supplied nested mapping changes only its supplied fields. Cluster overlays merge each named entry onto that cluster's existing values, preserving its endpoint and omitted credentials. An overlay may add a named cluster or change any field.
+Each supplied field replaces its previous value, including `false` and empty strings. Omitted fields retain their previous values; an empty mapping (`{}`) changes nothing. A supplied nested mapping changes only its supplied fields. Cluster overlays merge each named entry onto that cluster's existing values, preserving its endpoint and omitted credentials. An overlay may add a named cluster or change any field. Without a cluster base file, the overlay merges onto the initial `default` cluster and may add further clusters.
 
 Each merged configuration is validated after its base file and overlay have been loaded, so the base can enable authentication and leave credentials for the overlay. Keep actual credentials outside version control and out of ConfigMaps. A cluster Secret overlay can supply credentials as follows:
 

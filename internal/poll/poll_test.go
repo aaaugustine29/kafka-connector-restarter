@@ -3,6 +3,8 @@ package poll
 import (
 	"bytes"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -161,7 +163,7 @@ func TestFilterByBackoffs(t *testing.T) {
 				BackoffStatuses: test.statuses,
 			}
 
-			if got := FilterByBackoffs(filter, test.actions); !slices.Equal(got, test.expected) {
+			if got := FilterByBackoffs(filter, test.actions, slog.Default()); !slices.Equal(got, test.expected) {
 				t.Fatalf("FilterByBackoffs() = %#v, want %#v", got, test.expected)
 			}
 		})
@@ -331,6 +333,11 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 }
 
 func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
 	type requestEvent struct {
 		cluster string
 		method  string
@@ -344,11 +351,14 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 	ctx, cancel := context.WithCancel(context.Background())
 	var workers sync.WaitGroup
 	pollers := make(map[string]*ConnectClusterPoller)
+	endpoints := make(map[string]string)
 	for _, name := range []string{"production", "staging"} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			events <- requestEvent{cluster: name, method: r.Method}
 			if r.Method == http.MethodGet {
 				io.WriteString(w, `{"shared-connector":{"status":{"name":"shared-connector","connector":{"state":"FAILED"}}}}`)
+			} else if name == "staging" {
+				w.WriteHeader(http.StatusInternalServerError)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
 			}
@@ -362,6 +372,7 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 			Host: serverURL.Hostname(), Port: serverURL.Port(),
 		})
 		pollers[name] = poller
+		endpoints[name] = server.URL
 		workers.Go(func() { poller.Poll(ctx, manager) })
 	}
 	finished := make(chan struct{})
@@ -420,5 +431,45 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 		if len(poller.backoffFilter.BackoffStatuses) != 1 || poller.backoffFilter.BackoffStatuses["shared-connector"].Attempts != 1 {
 			t.Fatalf("cluster %q lost its independent backoff history", name)
 		}
+	}
+
+	// Read only after both pollers stop, so concurrent logging has finished.
+	messages := map[string]map[string]bool{"production": {}, "staging": {}}
+	decoder := jsontext.NewDecoder(bytes.NewReader(logs.Bytes()))
+	for {
+		value, err := decoder.ReadValue()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record struct {
+			Message  string `json:"msg"`
+			Cluster  string `json:"connect_cluster"`
+			Endpoint string `json:"endpoint"`
+		}
+		if err := json.Unmarshal(value, &record); err != nil {
+			t.Fatal(err)
+		}
+		clusterMessages, exists := messages[record.Cluster]
+		if !exists || record.Endpoint != endpoints[record.Cluster] {
+			t.Fatalf("log lost its cluster context: %s", value)
+		}
+		clusterMessages[record.Message] = true
+	}
+	for name, clusterMessages := range messages {
+		for _, message := range []string{
+			"polling started", "polling settings updated", "polling stopped",
+			"failed connector detected", "sending remediation request",
+			"connector restart skipped because it is in the backoff window", "poll cycle completed",
+		} {
+			if !clusterMessages[message] {
+				t.Errorf("cluster %q missing log message %q", name, message)
+			}
+		}
+	}
+	if !messages["production"]["remediation request accepted"] || !messages["staging"]["remediation request failed"] {
+		t.Fatal("restart success or failure logs lost their cluster identity")
 	}
 }
