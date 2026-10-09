@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,59 @@ import (
 
 	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
 )
+
+func TestNewConnectAPICreatesIndependentClients(t *testing.T) {
+	first := NewConnectAPI(connectcluster.DefaultConfiguration(), time.Second)
+	second := NewConnectAPI(connectcluster.DefaultConfiguration(), 2*time.Second)
+	if first.HTTPClient == second.HTTPClient {
+		t.Fatal("clusters share an HTTP client")
+	}
+	first.HTTPClient.Timeout = 3 * time.Second
+	if second.HTTPClient.Timeout != 2*time.Second {
+		t.Fatal("changing one cluster's timeout changed another cluster's client")
+	}
+}
+
+func TestConnectAPIReusesClientAfterTimeoutChange(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/slow" {
+			<-r.Context().Done()
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connect := NewConnectAPI(connectcluster.ConnectClusterAPIConfiguration{
+		Host: serverURL.Hostname(), Port: serverURL.Port(),
+	}, time.Second)
+	client := connect.HTTPClient
+	request, err := connect.NewRequest(t.Context(), http.MethodGet, connect.BaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+
+	connect.HTTPClient.Timeout = 30 * time.Millisecond
+	request, err = connect.NewRequest(t.Context(), http.MethodGet, connect.BaseURL+"/slow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Do(request)
+	if timeout, ok := errors.AsType[net.Error](err); !ok || !timeout.Timeout() {
+		t.Fatalf("slow request error = %v, want a timeout", err)
+	}
+	if connect.HTTPClient != client {
+		t.Fatal("timeout update replaced the HTTP client")
+	}
+}
 
 func TestNewConnectAPIBuildsBaseURL(t *testing.T) {
 	tests := []struct {
@@ -45,7 +99,7 @@ func TestNewConnectAPIBuildsBaseURL(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			connect := NewConnectAPI(&http.Client{}, test.configuration)
+			connect := NewConnectAPI(test.configuration, time.Second)
 			if connect.BaseURL != test.wantURL {
 				t.Fatalf("BaseURL = %q, want %q", connect.BaseURL, test.wantURL)
 			}
@@ -73,18 +127,11 @@ func TestConnectAPIDoesNotFollowRedirects(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				client := server.Client()
-				client.Timeout = 2 * time.Second
-				originalError := errors.New("original redirect policy")
-				client.CheckRedirect = func(*http.Request, []*http.Request) error { return originalError }
-				connect := NewConnectAPI(client, connectcluster.ConnectClusterAPIConfiguration{
+				connect := NewConnectAPI(connectcluster.ConnectClusterAPIConfiguration{
 					Host: serverURL.Hostname(), Port: serverURL.Port(),
-				})
-				if connect.HTTPClient.Timeout != client.Timeout || connect.HTTPClient.Transport != client.Transport {
-					t.Fatal("Connect client did not preserve the timeout and transport")
-				}
-				if err := client.CheckRedirect(nil, nil); !errors.Is(err, originalError) {
-					t.Fatal("NewConnectAPI changed the caller's redirect policy")
+				}, 2*time.Second)
+				if connect.HTTPClient.Timeout != 2*time.Second {
+					t.Fatal("Connect client did not use the configured timeout")
 				}
 				request, err := connect.NewRequest(context.Background(), method, connect.BaseURL)
 				if err != nil {

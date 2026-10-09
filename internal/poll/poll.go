@@ -3,7 +3,6 @@ package poll
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
@@ -18,27 +17,24 @@ import (
 // ConnectClusterPoller owns the client and backoff state for one cluster.
 // Its mutable state is used only by its polling goroutine.
 type ConnectClusterPoller struct {
-	name                           string
-	connectHTTPClient              *http.Client
-	backoffFilter                  backoff.BackoffFilter
-	connectClusterAPIConfiguration connectcluster.ConnectClusterAPIConfiguration
+	name                 string
+	connect              requests.ConnectAPI
+	backoffFilter        backoff.BackoffFilter
+	clusterConfiguration connectcluster.ConnectClusterAPIConfiguration
 }
 
 func NewConnectClusterPoller(name string, configuration connectcluster.ConnectClusterAPIConfiguration) *ConnectClusterPoller {
-	return &ConnectClusterPoller{name: name, connectClusterAPIConfiguration: configuration}
+	return &ConnectClusterPoller{name: name, clusterConfiguration: configuration}
 }
 
 func (poller *ConnectClusterPoller) Poll(ctx context.Context, configManager *config.Manager) {
 	configuration, updateChannel := configManager.ConfigurationSnapshot()
-	poller.connectHTTPClient = &http.Client{
-		Timeout: configuration.CommunicationConfig.RequestTimeout.Duration(),
-	}
-	connect := requests.NewConnectAPI(poller.connectHTTPClient, poller.connectClusterAPIConfiguration)
+	poller.connect = requests.NewConnectAPI(poller.clusterConfiguration, configuration.CommunicationConfig.RequestTimeout.Duration())
 	poller.backoffFilter = backoff.BackoffFilter{
 		BackoffConfig:   configuration.PollingBehavior.Backoff,
 		BackoffStatuses: map[string]backoff.BackoffStatus{},
 	}
-	logger := slog.With("connect_cluster", poller.name, "endpoint", connect.BaseURL)
+	logger := slog.With("connect_cluster", poller.name, "endpoint", poller.connect.BaseURL)
 	logPollingSettings(logger, "polling started", configuration)
 	defer logger.Info("polling stopped")
 
@@ -53,10 +49,8 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configManager *con
 			var newConfiguration config.ApplicationConfiguration
 			newConfiguration, updateChannel = configManager.ConfigurationSnapshot()
 			if newConfiguration.CommunicationConfig != configuration.CommunicationConfig {
-				poller.connectHTTPClient = &http.Client{
-					Timeout: newConfiguration.CommunicationConfig.RequestTimeout.Duration(),
-				}
-				connect = requests.NewConnectAPI(poller.connectHTTPClient, poller.connectClusterAPIConfiguration)
+				// Requests run synchronously in this goroutine; update only between cycles.
+				poller.connect.HTTPClient.Timeout = newConfiguration.CommunicationConfig.RequestTimeout.Duration()
 			}
 			if newConfiguration.PollingBehavior.Backoff != configuration.PollingBehavior.Backoff {
 				poller.backoffFilter.BackoffConfig = newConfiguration.PollingBehavior.Backoff
@@ -73,7 +67,7 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configManager *con
 
 		case <-ticker.C:
 			cycleStarted := time.Now()
-			connectorStatuses, err := status.FindConnectorStatuses(ctx, connect)
+			connectorStatuses, err := status.FindConnectorStatuses(ctx, poller.connect)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -93,7 +87,7 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configManager *con
 				if ctx.Err() != nil {
 					return
 				}
-				result, err := actions.TakeAction(ctx, remediationAction, connect, logger)
+				result, err := actions.TakeAction(ctx, remediationAction, poller.connect, logger)
 				if err != nil && ctx.Err() == nil {
 					remediationAction.Logger(logger).Error("remediation request failed", "request_made", result.RequestMade, "status_code", result.StatusCode, "error", err)
 				}

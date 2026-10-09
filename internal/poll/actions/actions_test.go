@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
 	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
@@ -40,9 +41,9 @@ func TestTakeActionRejectsRedirectAndRecordsAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connect := requests.NewConnectAPI(server.Client(), connectcluster.ConnectClusterAPIConfiguration{
+	connect := requests.NewConnectAPI(connectcluster.ConnectClusterAPIConfiguration{
 		Host: serverURL.Hostname(), Port: serverURL.Port(),
-	})
+	}, time.Second)
 	result, err := TakeAction(context.Background(), RemediationAction{
 		ConnectorName: "source-connector", Kind: RestartConnector,
 	}, connect, slog.Default())

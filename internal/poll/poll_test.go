@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -403,6 +404,10 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 			posts[event.cluster]++
 		}
 	}
+	clients := make(map[string]*http.Client)
+	for name, poller := range pollers {
+		clients[name] = poller.connect.HTTPClient
+	}
 	if err := manager.UpdateConfiguration(func(application *config.ApplicationConfiguration) error {
 		application.PollingBehavior.Interval = config.Duration(5 * time.Millisecond)
 		application.PollingBehavior.Backoff.Exponential = false
@@ -422,10 +427,13 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 	}
 	stop()
 	for name, poller := range pollers {
+		if poller.connect.HTTPClient != clients[name] {
+			t.Fatalf("cluster %q replaced its HTTP client during an application update", name)
+		}
 		if posts[name] != 1 {
 			t.Fatalf("cluster %q made %d restarts, want one independent attempt", name, posts[name])
 		}
-		if poller.connectHTTPClient.Timeout != 250*time.Millisecond || poller.backoffFilter.BackoffConfig.Exponential {
+		if poller.connect.HTTPClient.Timeout != 250*time.Millisecond || poller.backoffFilter.BackoffConfig.Exponential {
 			t.Fatalf("cluster %q did not apply shared application settings", name)
 		}
 		if len(poller.backoffFilter.BackoffStatuses) != 1 || poller.backoffFilter.BackoffStatuses["shared-connector"].Attempts != 1 {
@@ -471,5 +479,136 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 	}
 	if !messages["production"]["remediation request accepted"] || !messages["staging"]["remediation request failed"] {
 		t.Fatal("restart success or failure logs lost their cluster identity")
+	}
+}
+
+func TestBlockedClusterDoesNotStopOtherPollers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	blocked := make(chan struct{})
+	var started sync.Once
+	blockedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started.Do(func() { close(blocked) })
+		<-r.Context().Done()
+	}))
+	t.Cleanup(blockedServer.Close)
+	requests := make(chan struct{}, 16)
+	healthyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requests <- struct{}{}:
+		case <-r.Context().Done():
+			return
+		}
+		io.WriteString(w, "{}")
+	}))
+	t.Cleanup(healthyServer.Close)
+	configuration := config.DefaultConfiguration()
+	configuration.PollingBehavior.Interval = config.Duration(10 * time.Millisecond)
+	configuration.CommunicationConfig.RequestTimeout = config.Duration(time.Hour)
+	manager := config.NewManager(configuration)
+	var workers sync.WaitGroup
+	for name, server := range map[string]*httptest.Server{"blocked": blockedServer, "healthy": healthyServer} {
+		serverURL, err := url.Parse(server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		poller := NewConnectClusterPoller(name, connectcluster.ConnectClusterAPIConfiguration{
+			Host: serverURL.Hostname(), Port: serverURL.Port(),
+		})
+		workers.Go(func() { poller.Poll(ctx, manager) })
+	}
+	finished := make(chan struct{})
+	go func() { workers.Wait(); close(finished) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Error("pollers did not stop after cancellation")
+		}
+	})
+	select {
+	case <-blocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocked cluster did not start its request")
+	}
+	for i := 0; i < 3; i++ {
+		select {
+		case <-requests:
+		case <-time.After(time.Second):
+			t.Fatal("healthy cluster stopped polling while the other cluster was blocked")
+		}
+	}
+}
+
+func TestPollTimeoutUpdateAppliesToRequestsWithoutReplacingClient(t *testing.T) {
+	ready := make(chan struct{})
+	cancellations := make(chan time.Duration, 16)
+	var first atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !first.Swap(true) {
+			io.WriteString(w, "{}")
+			close(ready)
+			return
+		}
+		started := time.Now()
+		<-r.Context().Done()
+		select {
+		case cancellations <- time.Since(started):
+		default:
+		}
+	}))
+	t.Cleanup(server.Close)
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := config.DefaultConfiguration()
+	configuration.PollingBehavior.Interval = config.Duration(10 * time.Millisecond)
+	configuration.CommunicationConfig.RequestTimeout = config.Duration(time.Second)
+	manager := config.NewManager(configuration)
+	poller := NewConnectClusterPoller("test", connectcluster.ConnectClusterAPIConfiguration{
+		Host: serverURL.Hostname(), Port: serverURL.Port(),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan struct{})
+	go func() { poller.Poll(ctx, manager); close(finished) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Error("poller did not stop after cancellation")
+		}
+	})
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("poller did not retrieve its initial statuses")
+	}
+	client := poller.connect.HTTPClient
+	if err := manager.UpdateConfiguration(func(application *config.ApplicationConfiguration) error {
+		application.CommunicationConfig.RequestTimeout = config.Duration(30 * time.Millisecond)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case duration := <-cancellations:
+			// A cycle already in progress can still use the old one-second timeout.
+			if duration < 500*time.Millisecond {
+				cancel()
+				<-finished
+				if poller.connect.HTTPClient != client || client.Timeout != 30*time.Millisecond {
+					t.Fatal("timeout update replaced the client or did not apply the new timeout")
+				}
+				return
+			}
+		case <-deadline.C:
+			t.Fatal("no request used the updated timeout")
+		}
 	}
 }

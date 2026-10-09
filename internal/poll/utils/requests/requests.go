@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"time"
 
 	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
 )
@@ -15,11 +16,13 @@ type ConnectAPI struct {
 	Auth       connectcluster.AuthConfiguration
 }
 
-func NewConnectAPI(httpClient *http.Client, configuration connectcluster.ConnectClusterAPIConfiguration) ConnectAPI {
-	// Keep the caller's client unchanged while preventing redirected requests.
-	client := *httpClient
-	client.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
+// NewConnectAPI creates the HTTP client used for one cluster's status and restart requests.
+func NewConnectAPI(configuration connectcluster.ConnectClusterAPIConfiguration, requestTimeout time.Duration) ConnectAPI {
+	client := &http.Client{
+		Timeout: requestTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	scheme := "http"
@@ -28,7 +31,7 @@ func NewConnectAPI(httpClient *http.Client, configuration connectcluster.Connect
 	}
 
 	return ConnectAPI{
-		HTTPClient: &client,
+		HTTPClient: client,
 		BaseURL: (&url.URL{
 			Scheme: scheme,
 			Host:   net.JoinHostPort(configuration.Host, configuration.Port),

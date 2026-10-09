@@ -1,12 +1,67 @@
 package connectcluster
 
 import (
+	"bytes"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLoadFilesWarnsAboutDuplicateEndpoints(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		base        string
+		overlay     string
+		wantWarning bool
+	}{
+		{name: "default endpoints", base: "production: {}\nstaging: {}", wantWarning: true},
+		{name: "equivalent host and port", base: "production: {host: CONNECT.local., port: '08083'}\nstaging: {host: connect.local}", wantWarning: true},
+		{name: "equivalent IPv6", base: "production: {host: '2001:db8::1'}\nstaging: {host: '2001:0db8:0:0:0:0:0:1'}", wantWarning: true},
+		{name: "overlay introduces duplicate", base: "production: {host: production.local}\nstaging: {host: staging.local}", overlay: "staging: {host: production.local}", wantWarning: true},
+		{name: "different hosts", base: "production: {host: production.local}\nstaging: {host: staging.local}"},
+		{name: "different ports", base: "production: {}\nstaging: {port: '8084'}"},
+		{name: "different schemes", base: "production: {}\nstaging: {https: true}"},
+		{name: "empty clusters", base: "{}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			previousLogger := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(previousLogger) })
+			overlayPath := ""
+			if test.overlay != "" {
+				overlayPath = writeConfigFile(t, test.overlay)
+			}
+			clusters, err := LoadFiles(writeConfigFile(t, test.base), overlayPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(logs.String(), "level=WARN"); got != test.wantWarning {
+				t.Fatalf("warning = %t, want %t; logs: %s", got, test.wantWarning, logs.String())
+			}
+			if test.wantWarning && (len(clusters) != 2 || !strings.Contains(logs.String(), "production staging")) {
+				t.Fatalf("duplicate endpoints must remain configured and both names must be logged: %s", logs.String())
+			}
+		})
+	}
+}
+
+func TestLoadFilesDuplicateWarningOmitsCredentials(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+	base := writeConfigFile(t, "production:\n  https: true\n  authConfig: {enabled: true, username: private-user, password: private-password}\nstaging:\n  https: true")
+	if _, err := LoadFiles(base, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), "level=WARN") || strings.Contains(logs.String(), "private-user") || strings.Contains(logs.String(), "private-password") {
+		t.Fatalf("expected a credential-free warning: %s", logs.String())
+	}
+}
 
 func writeConfigFile(t *testing.T, contents string) string {
 	t.Helper()

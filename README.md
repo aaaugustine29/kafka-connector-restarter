@@ -68,7 +68,9 @@ production:
     password: replace-me
 ```
 
-Cluster Basic Auth requires `https: true`, a nonblank username, and a nonempty password. Invalid combinations fail startup; authentication is never silently disabled. All clusters share the application's polling behavior, request timeout, and logging policy, while maintaining independent restart backoff history.
+Cluster Basic Auth requires `https: true`, a nonblank username without a colon, and a nonempty password. Invalid combinations fail startup; authentication is never silently disabled. All clusters share the application's polling behavior, request timeout, and logging policy, while maintaining independent restart backoff history. Each cluster reuses one HTTP client for status and restart requests; timeout updates apply between polling cycles without replacing that client.
+
+Clusters configured with the same literal endpoint generate a startup warning but remain enabled. The comparison accounts for hostname casing, a trailing DNS dot, equivalent IPv6 spellings, and leading zeros in ports; it does not resolve DNS aliases or discover whether different endpoints belong to the same Kafka Connect cluster. Duplicate pollers maintain separate backoff histories and may issue duplicate restart requests. Warnings never include authentication credentials.
 
 The available settings and defaults are:
 
@@ -92,7 +94,7 @@ The available settings and defaults are:
 | `pollingBehavior.backoff.exponential` | `true` |
 | `loggingConfig.level` | `INFO` |
 
-In the cluster file, `<cluster>.host` is a DNS hostname or unbracketed IP address (for example, `kafka-connect`, `127.0.0.1`, or `2001:db8::1`), without a URL scheme, port, path, or whitespace. Invalid host syntax is rejected at startup. `<cluster>.port` is a string such as `"8083"`. In the application file, `loggingConfig.level` accepts Go slog levels such as `DEBUG`, `INFO`, `WARN`, and `ERROR`. Connect requests do not follow redirects; a redirect is treated as an unsuccessful status rather than allowing a restart POST to become a GET or send credentials to another endpoint.
+In the cluster file, `<cluster>.host` is a DNS hostname or unbracketed IP address (for example, `kafka-connect`, `127.0.0.1`, or `2001:db8::1`), without a URL scheme, port, path, or whitespace. Invalid host syntax is rejected at startup. `<cluster>.port` is a string containing only decimal digits, between 1 and 65535, such as `"8083"`. In the application file, `loggingConfig.level` accepts Go slog levels such as `DEBUG`, `INFO`, `WARN`, and `ERROR`. Connect requests do not follow redirects; a redirect is treated as an unsuccessful status rather than allowing a restart POST to become a GET or send credentials to another endpoint.
 
 Durations are positive strings with units, such as `250ms`, `10s`, `1.5s`, or `1m30s`. Supported units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, and `h`. Numeric, invalid, nonpositive, or overflowing durations are rejected. The maximum backoff delay must be at least the base delay. The default base delay is `20s`, independently of any configured polling interval.
 

@@ -16,15 +16,17 @@ func ValidateConfiguration(configuration ConnectClusterAPIConfiguration) error {
 		return fmt.Errorf("host: Connect host must be a hostname or unbracketed IP address without a scheme, port, path, or whitespace")
 	}
 	port, err := strconv.Atoi(configuration.Port)
-	if err != nil || port < 1 || port > 65535 {
-		return fmt.Errorf("port: Connect port must be between 1 and 65535")
+	if err != nil || port < 1 || port > 65535 || strings.ContainsFunc(configuration.Port, func(character rune) bool {
+		return character < '0' || character > '9'
+	}) {
+		return fmt.Errorf("port: Connect port must contain only decimal digits and be between 1 and 65535")
 	}
 	if configuration.AuthConfig.Enabled {
 		if !configuration.HTTPS {
 			return fmt.Errorf("https: Basic Auth requires HTTPS")
 		}
-		if strings.TrimSpace(configuration.AuthConfig.Username) == "" {
-			return fmt.Errorf("authConfig.username: Basic Auth requires a username and password")
+		if strings.TrimSpace(configuration.AuthConfig.Username) == "" || strings.Contains(configuration.AuthConfig.Username, ":") {
+			return fmt.Errorf("authConfig.username: Basic Auth requires a nonblank username without a colon")
 		}
 		if configuration.AuthConfig.Password == "" {
 			return fmt.Errorf("authConfig.password: Basic Auth requires a username and password")

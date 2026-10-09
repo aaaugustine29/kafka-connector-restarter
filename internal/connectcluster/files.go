@@ -2,6 +2,13 @@ package connectcluster
 
 import (
 	"fmt"
+	"log/slog"
+	"maps"
+	"net"
+	"net/netip"
+	"slices"
+	"strconv"
+	"strings"
 
 	"entropicworks.com/kafka-connector-restarter/internal/yamlconfig"
 )
@@ -28,7 +35,32 @@ func LoadFiles(basePath, secretPath string) (map[string]ConnectClusterAPIConfigu
 			return nil, fmt.Errorf("cluster %q: %w", name, err)
 		}
 	}
+	warnDuplicateEndpoints(clusters)
 	return clusters, nil
+}
+
+// Compare literal endpoints without DNS lookups or including credentials.
+func warnDuplicateEndpoints(clusters map[string]ConnectClusterAPIConfiguration) {
+	seen := make(map[string]string)
+	for _, name := range slices.Sorted(maps.Keys(clusters)) {
+		configuration := clusters[name]
+		host := strings.ToLower(strings.TrimSuffix(configuration.Host, "."))
+		if address, err := netip.ParseAddr(configuration.Host); err == nil {
+			host = address.String()
+		}
+		port, _ := strconv.Atoi(configuration.Port) // LoadFiles has already validated it.
+		scheme := "http"
+		if configuration.HTTPS {
+			scheme = "https"
+		}
+		endpoint := scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port))
+		if first, exists := seen[endpoint]; exists {
+			slog.Warn("Connect clusters share an endpoint; independent pollers may issue duplicate restart requests",
+				"connect_clusters", []string{first, name}, "endpoint", endpoint)
+		} else {
+			seen[endpoint] = name
+		}
+	}
 }
 
 func decodeFile(path string, clusters map[string]ConnectClusterAPIConfiguration) error {
