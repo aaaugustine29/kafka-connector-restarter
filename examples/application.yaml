@@ -1,0 +1,16 @@
+# Local example: the API is unauthenticated. Do not expose it publicly.
+pollingBehavior:
+  interval: 10s
+  restartFailedTasks: true
+  backoff:
+    enabled: true
+    baseDelay: 20s
+    maxDelay: 10m
+    exponential: true
+communicationConfig:
+  requestTimeout: 10s
+apiConfig:
+  authConfig:
+    enabled: false
+loggingConfig:
+  level: INFO

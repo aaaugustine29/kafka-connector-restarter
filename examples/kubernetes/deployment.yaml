@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect-healer
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kafka-connect-healer
+  template:
+    metadata:
+      labels:
+        app: kafka-connect-healer
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: healer
+          # Replace with an available release tag before deploying.
+          image: entropicworks/kafka-connect-healer:v0.1.0
+          args:
+            - --config=/config/application.yaml
+            - --connect-clusters=/config/connect-clusters.yaml
+          ports:
+            - name: api
+              containerPort: 8080
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: configuration
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: configuration
+          configMap:
+            name: kafka-connect-healer-config

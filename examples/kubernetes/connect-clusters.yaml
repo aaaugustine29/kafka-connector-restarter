@@ -1,0 +1,7 @@
+# Replace this with your Kafka Connect Service hostname and port.
+production:
+  host: kafka-connect
+  port: "8083"
+  https: false
+  authConfig:
+    enabled: false

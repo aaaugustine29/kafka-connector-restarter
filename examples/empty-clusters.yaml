@@ -1,0 +1,2 @@
+# Starts only the application API, without polling any Kafka Connect clusters.
+{}

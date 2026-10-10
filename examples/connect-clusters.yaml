@@ -1,0 +1,7 @@
+# For a binary running on your host. Containers need a reachable hostname instead.
+local:
+  host: localhost
+  port: "8083"
+  https: false
+  authConfig:
+    enabled: false

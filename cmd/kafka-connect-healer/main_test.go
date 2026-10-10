@@ -13,7 +13,43 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/connectcluster"
 )
+
+func TestExampleConfigurations(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		application  string
+		clusters     string
+		secret       string
+		clusterCount int
+		authEnabled  bool
+	}{
+		{name: "local", application: "application.yaml", clusters: "connect-clusters.yaml", clusterCount: 1},
+		{name: "API only", application: "application.yaml", clusters: "empty-clusters.yaml"},
+		{name: "Kubernetes", application: "kubernetes/application.yaml", clusters: "kubernetes/connect-clusters.yaml", clusterCount: 1},
+		{name: "authenticated smoke test", application: "application.yaml", clusters: "empty-clusters.yaml", secret: "../../tests/fixtures/docker/application-secret.yaml", authEnabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			application, err := config.LoadFiles(filepath.Join("../../examples", test.application), test.secret)
+			if err != nil {
+				t.Fatalf("load application example: %v", err)
+			}
+			if application.APIConfig.AuthConfig.Enabled != test.authEnabled {
+				t.Fatalf("API auth enabled = %v, want %v", application.APIConfig.AuthConfig.Enabled, test.authEnabled)
+			}
+			clusters, err := connectcluster.LoadFiles(filepath.Join("../../examples", test.clusters), "")
+			if err != nil {
+				t.Fatalf("load cluster example: %v", err)
+			}
+			if len(clusters) != test.clusterCount {
+				t.Fatalf("cluster count = %d, want %d", len(clusters), test.clusterCount)
+			}
+		})
+	}
+}
 
 // Run the real main in a child process so flags, signals, and os.Exit stay isolated.
 func TestMainProcess(t *testing.T) {

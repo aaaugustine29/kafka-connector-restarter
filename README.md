@@ -37,7 +37,7 @@ Supply optional application settings and cluster definitions using separate YAML
 go run ./cmd/kafka-connect-healer --config=/path/to/application.yaml --connect-clusters=/path/to/connect-clusters.yaml
 ```
 
-The repository does not include configuration files. Omit `--config` to use all application defaults; an application file containing `{}` has the same effect. Omit `--connect-clusters` to poll one cluster named `default` at `http://localhost:8083`. To supply cluster definitions, use a file containing a mapping of cluster names to endpoint settings. A cluster file containing `{}` starts no pollers; it still starts the application API.
+Runnable local and Kubernetes configurations are provided in [examples/](examples/README.md). Omit `--config` to use all application defaults; an application file containing `{}` has the same effect. Omit `--connect-clusters` to poll one cluster named `default` at `http://localhost:8083`. To supply cluster definitions, use a file containing a mapping of cluster names to endpoint settings. A cluster file containing `{}` starts no pollers; it still starts the application API.
 
 Optional Secret overlays are loaded independently:
 
@@ -56,6 +56,10 @@ The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available
 API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. All polling, restart, and backoff logs include `connect_cluster` and `endpoint`; action logs also identify the connector and, for task restarts, `task_id`. Startup logs report the configured cluster count and source, and each poller logs its effective settings, changes, and shutdown at INFO. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection, backoff skips, and poll-cycle counts and durations are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Authentication credentials are omitted. Normal shutdown cancellation does not generate polling failure logs.
 
 ## Docker
+
+Release images are published to `entropicworks/kafka-connect-healer` on Docker Hub
+for Linux amd64 and arm64. Use an explicit published version tag, such as `v0.1.0`;
+the first tag will only become available after the release workflow completes.
 
 Build the image:
 
@@ -251,4 +255,58 @@ go vet ./...
 go test -race -shuffle=on -count=3 -timeout=5m ./...
 ```
 
-CI also checks formatting and verifies dependency checksums. Go is selected from `go.mod`.
+CI also checks formatting, verifies dependency checksums, runs `govulncheck`, builds
+and smoke-tests the Docker image, and renders the Kubernetes example. The smoke test
+checks API reads and updates, cluster creation/deletion, authentication, password
+redaction, packaged attribution, and clean shutdown with a non-root, read-only
+container. It does not test remediation against a real Kafka Connect cluster.
+Go is selected from `go.mod`.
+
+Run the additional checks locally:
+
+```sh
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+docker build -t kafka-connect-healer:local .
+bash scripts/docker-smoke-test.sh kafka-connect-healer:local
+kubectl kustomize examples/kubernetes
+```
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance,
+and [SECURITY.md](SECURITY.md) for private vulnerability reporting and deployment
+precautions.
+
+## Releases
+
+The release workflow publishes to Docker Hub's `entropicworks/kafka-connect-healer`
+repository only after the full CI checks pass for the tagged commit. It builds Linux
+amd64 and arm64 images and attaches an SBOM and build provenance. Only the full
+version tag is published (`v0.1.0`, or a prerelease such as `v0.1.0-rc.1`); no floating
+`latest`, major, or minor tags are updated. The runtime image includes `LICENSE`,
+`NOTICE`, and dependency licenses.
+
+Before the first release, maintainers must:
+
+1. Set GitHub Actions repository variable `DOCKERHUB_USERNAME` to the Docker account
+   used for publishing, and repository secret `DOCKERHUB_TOKEN` to an access token
+   with write access to the Docker Hub repository. Do not use the account password
+   or commit the token. Make the Docker Hub repository public for a public release.
+2. Enable GitHub private vulnerability reporting, monitor reports, and protect the
+   main branch and release tags so only authorized maintainers can publish.
+3. Check the full Git history for secrets and test against a real Kafka Connect
+   cluster, including failed connectors/tasks, authentication, backoff, and shutdown.
+
+To release, tag the reviewed commit after committing all release inputs:
+
+```sh
+git tag -a v0.1.0 -m 'Kafka Connect Healer v0.1.0'
+git push origin v0.1.0
+```
+
+After the workflow succeeds, create a GitHub release for the same tag with release
+notes, supported Kafka Connect versions that were actually tested, known limitations,
+and the Docker image reference/digest. The workflow publishes images only; it does not
+create a GitHub release or upload standalone binary archives. Do not move published
+version tags; publish a new patch version for fixes. Use an image digest for deployments
+that require immutable image references.
