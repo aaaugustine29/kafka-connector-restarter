@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 
-	"entropicworks.com/kafka-connector-restarter/internal/yamlconfig"
+	"entropicworks.com/kafka-connect-healer/internal/yamlconfig"
 )
 
 // LoadFiles loads application defaults, an optional base file, and an optional

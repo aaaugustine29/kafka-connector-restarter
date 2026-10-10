@@ -17,7 +17,7 @@ import (
 
 // Run the real main in a child process so flags, signals, and os.Exit stay isolated.
 func TestMainProcess(t *testing.T) {
-	if os.Getenv("KCR_TEST_MAIN_PROCESS") != "1" {
+	if os.Getenv("KCH_TEST_MAIN_PROCESS") != "1" {
 		return
 	}
 	separator := slices.Index(os.Args, "--")
@@ -33,7 +33,7 @@ func TestMainProcess(t *testing.T) {
 func mainProcess(ctx context.Context, arguments ...string) *exec.Cmd {
 	arguments = append([]string{"-test.run=^TestMainProcess$", "--"}, arguments...)
 	command := exec.CommandContext(ctx, os.Args[0], arguments...)
-	command.Env = append(os.Environ(), "KCR_TEST_MAIN_PROCESS=1")
+	command.Env = append(os.Environ(), "KCH_TEST_MAIN_PROCESS=1")
 	return command
 }
 
@@ -99,7 +99,7 @@ func TestMainStartupAndShutdown(t *testing.T) {
 			if err != nil {
 				t.Fatalf("application did not shut down cleanly: %v\n%s", err, logs.String())
 			}
-			if !strings.Contains(logs.String(), test.want) || !strings.Contains(logs.String(), "Kafka connector restarter stopped") {
+			if !strings.Contains(logs.String(), test.want) || !strings.Contains(logs.String(), "Kafka Connect Healer stopped") {
 				t.Fatalf("missing expected startup or shutdown logs: %s", logs.String())
 			}
 			if test.name == "explicit empty clusters" && strings.Contains(logs.String(), "polling started") {

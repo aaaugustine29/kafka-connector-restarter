@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/config"
-	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
-	"entropicworks.com/kafka-connector-restarter/internal/poll/actions"
-	"entropicworks.com/kafka-connector-restarter/internal/poll/backoff"
-	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
-	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
+	"entropicworks.com/kafka-connect-healer/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
+	"entropicworks.com/kafka-connect-healer/internal/poll/actions"
+	"entropicworks.com/kafka-connect-healer/internal/poll/backoff"
+	"entropicworks.com/kafka-connect-healer/internal/poll/status"
+	"entropicworks.com/kafka-connect-healer/internal/poll/utils/requests"
 )
 
 // ConnectClusterPoller owns the client and backoff state for one cluster.
@@ -27,8 +27,8 @@ func NewConnectClusterPoller(name string, configuration connectcluster.ConnectCl
 	return &ConnectClusterPoller{name: name, clusterConfiguration: configuration}
 }
 
-func (poller *ConnectClusterPoller) Poll(ctx context.Context, configManager *config.Manager) {
-	configuration, updateChannel := configManager.ConfigurationSnapshot()
+func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManager *config.Manager) {
+	configuration, configurationUpdateChannel := configurationManager.ConfigurationSnapshot()
 	poller.connect = requests.NewConnectAPI(poller.clusterConfiguration, configuration.CommunicationConfig.RequestTimeout.Duration())
 	poller.backoffFilter = backoff.BackoffFilter{
 		BackoffConfig:   configuration.PollingBehavior.Backoff,
@@ -45,9 +45,9 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configManager *con
 		select {
 		case <-ctx.Done():
 			return
-		case <-updateChannel:
+		case <-configurationUpdateChannel:
 			var newConfiguration config.ApplicationConfiguration
-			newConfiguration, updateChannel = configManager.ConfigurationSnapshot()
+			newConfiguration, configurationUpdateChannel = configurationManager.ConfigurationSnapshot()
 			if newConfiguration.CommunicationConfig != configuration.CommunicationConfig {
 				// Requests run synchronously in this goroutine; update only between cycles.
 				poller.connect.HTTPClient.Timeout = newConfiguration.CommunicationConfig.RequestTimeout.Duration()

@@ -14,8 +14,19 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/poll"
 )
+
+func newTestServer(t *testing.T, configurationManager *config.Manager) *http.Server {
+	t.Helper()
+	clusterManager, err := poll.NewClusterManager(t.Context(), configurationManager, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(clusterManager.Close)
+	return NewServer(APIComponents{ConfigurationManager: configurationManager, ClusterManager: clusterManager})
+}
 
 func startTestServer(t *testing.T, server *http.Server) string {
 	t.Helper()
@@ -45,7 +56,7 @@ func startTestServer(t *testing.T, server *http.Server) string {
 
 func TestNewServerPatchConfigRoute(t *testing.T) {
 	manager := config.NewManager(config.DefaultConfiguration())
-	server := NewServer(APIComponents{ConfigManager: manager})
+	server := newTestServer(t, manager)
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPatch, "/config", strings.NewReader(`{"pollingBehavior":{"interval":"30s"}}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -61,7 +72,7 @@ func TestNewServerPatchConfigRoute(t *testing.T) {
 func TestNewServerRoutes(t *testing.T) {
 	configuration := config.DefaultConfiguration()
 	configuration.PollingBehavior.Interval = config.Duration(250 * time.Millisecond)
-	server := NewServer(APIComponents{ConfigManager: config.NewManager(configuration)})
+	server := newTestServer(t, config.NewManager(configuration))
 	baseURL := startTestServer(t, server)
 	client := &http.Client{Timeout: 5 * time.Second}
 	defer client.CloseIdleConnections()
@@ -116,7 +127,7 @@ func TestNewServerRoutes(t *testing.T) {
 }
 
 func TestServerShutdownWaitsForActiveRequest(t *testing.T) {
-	server := NewServer(APIComponents{ConfigManager: config.NewManager(config.DefaultConfiguration())})
+	server := newTestServer(t, config.NewManager(config.DefaultConfiguration()))
 	handler := server.Handler
 	requestStarted := make(chan struct{})
 	handlerCtx, releaseRequest := context.WithCancel(context.Background())
@@ -197,7 +208,7 @@ func TestServerTimesOutIncompletePatchBody(t *testing.T) {
 	before := config.DefaultConfiguration()
 	manager := config.NewManager(before)
 	_, changes := manager.ConfigurationSnapshot()
-	server := NewServer(APIComponents{ConfigManager: manager})
+	server := newTestServer(t, manager)
 	if server.ReadTimeout <= 0 {
 		t.Fatal("server has no request-body read deadline")
 	}

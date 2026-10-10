@@ -5,22 +5,22 @@ import (
 	"net/http"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/api/clusters"
-	configAPI "entropicworks.com/kafka-connector-restarter/internal/api/config"
-	"entropicworks.com/kafka-connector-restarter/internal/api/home"
-	"entropicworks.com/kafka-connector-restarter/internal/config"
-	"entropicworks.com/kafka-connector-restarter/internal/poll"
+	"entropicworks.com/kafka-connect-healer/internal/api/clusters"
+	configAPI "entropicworks.com/kafka-connect-healer/internal/api/config"
+	"entropicworks.com/kafka-connect-healer/internal/api/home"
+	"entropicworks.com/kafka-connect-healer/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/poll"
 )
 
 type APIComponents struct {
-	ConfigManager  *config.Manager
-	ClusterManager *poll.ClusterManager
+	ConfigurationManager *config.Manager
+	ClusterManager       *poll.ClusterManager
 }
 
 func NewServer(components APIComponents) *http.Server {
-	configHandler := configAPI.NewConfigHandler(components.ConfigManager)
+	configHandler := configAPI.NewConfigHandler(components.ConfigurationManager)
 	clustersHandler := clusters.NewClustersHandler(components.ClusterManager)
-	configuration := components.ConfigManager.GetConfiguration()
+	configuration := components.ConfigurationManager.GetConfiguration()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", home.HomeHandler)

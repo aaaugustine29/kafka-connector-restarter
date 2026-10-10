@@ -2,3 +2,4 @@
 - Add something configurable like "RESTART_STATES" where you list the restart states that count as needing a restart, and have a default
 - Can we somehow like schedule restarts, and have a thread just constantly update a set of statuses that are 
 - audit pass by value/reference
+- Review configuration update locking: `Manager.UpdateConfiguration` executes its callback under the manager's write lock. Calling `GetConfiguration`, `ConfigurationSnapshot`, or `UpdateConfiguration` on that same manager from the callback deadlocks. Keep callbacks limited to editing the supplied configuration until a simpler alternative is chosen.

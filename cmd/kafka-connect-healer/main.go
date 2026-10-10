@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/api"
-	"entropicworks.com/kafka-connector-restarter/internal/config"
-	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
-	"entropicworks.com/kafka-connector-restarter/internal/logging"
-	"entropicworks.com/kafka-connector-restarter/internal/poll"
+	"entropicworks.com/kafka-connect-healer/internal/api"
+	"entropicworks.com/kafka-connect-healer/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
+	"entropicworks.com/kafka-connect-healer/internal/logging"
+	"entropicworks.com/kafka-connect-healer/internal/poll"
 )
 
 func main() {
@@ -29,13 +29,13 @@ func main() {
 		slog.Error("unexpected positional arguments; use configuration file flags")
 		os.Exit(1)
 	}
-	startupConfig, err := config.LoadFiles(*configPath, *secretPath)
+	startupConfiguration, err := config.LoadFiles(*configPath, *secretPath)
 	if err != nil {
 		slog.Error("configuration loading failed", "error", err)
 		os.Exit(1)
 	}
 	loggingLevel := new(slog.LevelVar)
-	loggingLevel.Set(startupConfig.LoggingConfig.Level)
+	loggingLevel.Set(startupConfiguration.LoggingConfig.Level)
 	logging.Configure(loggingLevel)
 
 	clusters, err := connectcluster.LoadFiles(*clustersPath, *clustersSecretPath)
@@ -60,17 +60,17 @@ func main() {
 	)
 	defer stop()
 
-	configManager := config.NewManager(startupConfig)
-	configuration := configManager.GetConfiguration()
-	clusterManager, err := poll.NewClusterManager(ctx, configManager, clusters)
+	configurationManager := config.NewManager(startupConfiguration)
+	configuration := configurationManager.GetConfiguration()
+	clusterManager, err := poll.NewClusterManager(ctx, configurationManager, clusters)
 	if err != nil {
 		slog.Error("Connect cluster manager startup failed", "error", err)
 		os.Exit(1)
 	}
 
 	apiComponents := api.APIComponents{
-		ConfigManager:  configManager,
-		ClusterManager: clusterManager,
+		ConfigurationManager: configurationManager,
+		ClusterManager:       clusterManager,
 	}
 	server := api.NewServer(apiComponents)
 	apiLogger := slog.With("component", "api", "address", server.Addr)
@@ -86,22 +86,22 @@ func main() {
 	})
 
 	workers.Go(func() {
-		configuration, configUpdateChannel := configManager.ConfigurationSnapshot()
+		configuration, configurationUpdateChannel := configurationManager.ConfigurationSnapshot()
 		loggingLevel.Set(configuration.LoggingConfig.Level)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-configUpdateChannel:
-				configuration, configUpdateChannel = configManager.ConfigurationSnapshot()
+			case <-configurationUpdateChannel:
+				configuration, configurationUpdateChannel = configurationManager.ConfigurationSnapshot()
 				loggingLevel.Set(configuration.LoggingConfig.Level)
 			}
 		}
 	})
 
 	<-ctx.Done()
-	slog.Info("Kafka connector restarter stopping")
+	slog.Info("Kafka Connect Healer stopping")
 	clusterManager.Close()
 
 	const shutdownTimeout = 5 * time.Second
@@ -121,5 +121,5 @@ func main() {
 	}
 
 	workers.Wait()
-	slog.Info("Kafka connector restarter stopped")
+	slog.Info("Kafka Connect Healer stopped")
 }

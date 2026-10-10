@@ -5,7 +5,7 @@ import (
 	"crypto/subtle"
 	"net/http"
 
-	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/config"
 )
 
 func basicAuth(next http.Handler, auth config.AuthConfiguration) http.Handler {
@@ -23,7 +23,7 @@ func basicAuth(next http.Handler, auth config.AuthConfiguration) http.Handler {
 		usernameMatches := subtle.ConstantTimeCompare(usernameHash[:], expectedUsername[:])
 		passwordMatches := subtle.ConstantTimeCompare(passwordHash[:], expectedPassword[:])
 		if !ok || usernameMatches&passwordMatches != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="kafka-connector-restarter", charset="UTF-8"`)
+			w.Header().Set("WWW-Authenticate", `Basic realm="kafka-connect-healer", charset="UTF-8"`)
 			w.Header().Set("Cache-Control", "no-store")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

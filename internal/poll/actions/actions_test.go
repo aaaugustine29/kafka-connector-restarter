@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
-	"entropicworks.com/kafka-connector-restarter/internal/poll/status"
-	"entropicworks.com/kafka-connector-restarter/internal/poll/utils/requests"
+	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
+	"entropicworks.com/kafka-connect-healer/internal/poll/status"
+	"entropicworks.com/kafka-connect-healer/internal/poll/utils/requests"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)

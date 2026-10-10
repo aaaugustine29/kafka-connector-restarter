@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/connectcluster"
+	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
 )
 
 func TestNewConnectAPICreatesIndependentClients(t *testing.T) {

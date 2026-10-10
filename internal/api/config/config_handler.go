@@ -10,7 +10,7 @@ import (
 	"net"
 	"net/http"
 
-	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/config"
 )
 
 type ConfigHandler struct {

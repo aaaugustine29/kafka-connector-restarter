@@ -1,4 +1,4 @@
-# kafka-connector-restarter
+# kafka-connect-healer
 
 Polls the REST APIs of named Kafka Connect clusters and restarts failed connectors. When task restarts are enabled, it also restarts failed tasks whose connector is running. Polling begins after the first interval; the service stops on SIGINT or SIGTERM.
 
@@ -7,13 +7,19 @@ Polls the REST APIs of named Kafka Connect clusters and restarts failed connecto
 Requires Go 1.27.1 or later. Run with all default values:
 
 ```sh
-go run ./cmd
+go run ./cmd/kafka-connect-healer
+```
+
+Build the application binary:
+
+```sh
+go build -o bin/kafka-connect-healer ./cmd/kafka-connect-healer
 ```
 
 Supply optional application settings and cluster definitions using separate YAML files:
 
 ```sh
-go run ./cmd --config=/path/to/application.yaml --connect-clusters=/path/to/connect-clusters.yaml
+go run ./cmd/kafka-connect-healer --config=/path/to/application.yaml --connect-clusters=/path/to/connect-clusters.yaml
 ```
 
 The repository does not include configuration files. Omit `--config` to use all application defaults; an application file containing `{}` has the same effect. Omit `--connect-clusters` to poll one cluster named `default` at `http://localhost:8083`. To supply cluster definitions, use a file containing a mapping of cluster names to endpoint settings. A cluster file containing `{}` starts no pollers; it still starts the application API.
@@ -21,7 +27,7 @@ The repository does not include configuration files. Omit `--config` to use all 
 Optional Secret overlays are loaded independently:
 
 ```sh
-go run ./cmd \
+go run ./cmd/kafka-connect-healer \
   --config=/path/to/application.yaml \
   --secret-config=/path/to/application-secret.yaml \
   --connect-clusters=/path/to/connect-clusters.yaml \
@@ -98,7 +104,7 @@ In the cluster file, `<cluster>.host` is a DNS hostname or unbracketed IP addres
 
 Durations are positive strings with units, such as `250ms`, `10s`, `1.5s`, or `1m30s`. Supported units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, and `h`. Numeric, invalid, nonpositive, or overflowing durations are rejected. The maximum backoff delay must be at least the base delay. The default base delay is `20s`, independently of any configured polling interval.
 
-Each file must contain exactly one YAML mapping document. Unknown keys, duplicate keys, null values, aliases, and YAML merge keys are rejected. Use `{}` for a file that intentionally keeps existing values. Decoder errors omit raw values to prevent credentials from reaching logs.
+Each file must contain exactly one YAML mapping document. Unknown keys, duplicate keys, null values, aliases, and YAML merge keys are rejected. An application file or Secret overlay containing `{}` keeps existing values; a cluster base file containing `{}` starts with no clusters. Decoder errors omit raw values to prevent credentials from reaching logs.
 
 ### Migration from environment variables
 
@@ -137,11 +143,11 @@ Supply credentials in the Secret YAML overlay, not the ConfigMap:
 ```yaml
 apiConfig:
   authConfig:
-    username: restarter-admin
+    username: healer-admin
     password: replace-me
 ```
 
-Enabled API authentication requires a nonblank username without a colon and a nonempty password; otherwise startup fails. Missing, malformed, or incorrect credentials return `401 Unauthorized` with a Basic Auth challenge before any route handler runs. All routes require the same credentials. Clients can use `curl --user restarter-admin https://your-restarter-host/config` to be prompted for the password. Credentials are never included in authentication error responses or logs.
+Enabled API authentication requires a nonblank username without a colon and a nonempty password; otherwise startup fails. Missing, malformed, or incorrect credentials return `401 Unauthorized` with a Basic Auth challenge before any route handler runs. All routes require the same credentials. Clients can use `curl --user healer-admin https://your-healer-host/config` to be prompted for the password. Credentials are never included in authentication error responses or logs.
 
 API authentication is startup-only: PATCH cannot enable, disable, or change its credentials. Update the startup files and restart to apply those changes. Resubmitting identical API settings is a no-op and is allowed.
 
@@ -184,3 +190,13 @@ Cluster updates are also in-memory only. Startup YAML files remain untouched, an
 ```sh
 go test ./...
 ```
+
+Run the same build, static analysis, and race-enabled tests used by CI:
+
+```sh
+go build ./...
+go vet ./...
+go test -race -shuffle=on -count=3 -timeout=5m ./...
+```
+
+CI also checks formatting and verifies dependency checksums. Go is selected from `go.mod`.

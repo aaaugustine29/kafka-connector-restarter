@@ -1,4 +1,4 @@
-module entropicworks.com/kafka-connector-restarter
+module entropicworks.com/kafka-connect-healer
 
 go 1.27.1
 

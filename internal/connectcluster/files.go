@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"entropicworks.com/kafka-connector-restarter/internal/yamlconfig"
+	"entropicworks.com/kafka-connect-healer/internal/yamlconfig"
 )
 
 // LoadFiles applies per-cluster defaults, an optional base file, then an optional

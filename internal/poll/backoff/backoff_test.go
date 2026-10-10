@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/config"
 )
 
 func TestDetermineNextActionTime(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"entropicworks.com/kafka-connector-restarter/internal/config"
+	"entropicworks.com/kafka-connect-healer/internal/config"
 )
 
 func TestAPIAuthentication(t *testing.T) {
@@ -46,7 +46,7 @@ func TestAPIAuthentication(t *testing.T) {
 				}
 				manager := config.NewManager(before)
 				_, changes := manager.ConfigurationSnapshot()
-				server := NewServer(APIComponents{ConfigManager: manager})
+				server := newTestServer(t, manager)
 				request := httptest.NewRequest(route.method, route.path, strings.NewReader(`{"pollingBehavior":{"restartFailedTasks":false}}`))
 				request.Header.Set("Content-Type", "application/json")
 				if credentials.authorization != "" {
@@ -67,7 +67,7 @@ func TestAPIAuthentication(t *testing.T) {
 					t.Fatal("response exposed credentials")
 				}
 				if !credentials.valid {
-					if response.Header().Get("WWW-Authenticate") != `Basic realm="kafka-connector-restarter", charset="UTF-8"` {
+					if response.Header().Get("WWW-Authenticate") != `Basic realm="kafka-connect-healer", charset="UTF-8"` {
 						t.Fatal("unauthorized response did not include the Basic Auth challenge")
 					}
 					if response.Header().Get("Cache-Control") != "no-store" {
@@ -91,7 +91,7 @@ func TestAPIAuthentication(t *testing.T) {
 }
 
 func TestAPIAuthenticationDisabledByDefault(t *testing.T) {
-	server := NewServer(APIComponents{ConfigManager: config.NewManager(config.DefaultConfiguration())})
+	server := newTestServer(t, config.NewManager(config.DefaultConfiguration()))
 	for _, header := range []string{"", "Basic invalid"} {
 		request := httptest.NewRequest(http.MethodGet, "/config", nil)
 		request.Header.Set("Authorization", header)
@@ -110,7 +110,7 @@ func TestAPIAuthenticationIdenticalPatchIsAllowed(t *testing.T) {
 	}
 	manager := config.NewManager(before)
 	_, changes := manager.ConfigurationSnapshot()
-	server := NewServer(APIComponents{ConfigManager: manager})
+	server := newTestServer(t, manager)
 	request := httptest.NewRequest(http.MethodPatch, "/config", strings.NewReader(`{"apiConfig":{"authConfig":{"enabled":true,"username":"api-user"}}}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.SetBasicAuth("api-user", "api-secret")
@@ -140,7 +140,7 @@ func TestAPIAuthenticationCannotBeChangedThroughPatch(t *testing.T) {
 			}
 			manager := config.NewManager(before)
 			_, changes := manager.ConfigurationSnapshot()
-			server := NewServer(APIComponents{ConfigManager: manager})
+			server := newTestServer(t, manager)
 			request := httptest.NewRequest(http.MethodPatch, "/config", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			request.SetBasicAuth("api-user", "api-secret")
