@@ -40,6 +40,30 @@ The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available
 
 API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. All polling, restart, and backoff logs include `connect_cluster` and `endpoint`; action logs also identify the connector and, for task restarts, `task_id`. Startup logs report the configured cluster count and source, and each poller logs its effective settings, changes, and shutdown at INFO. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection, backoff skips, and poll-cycle counts and durations are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Authentication credentials are omitted. Normal shutdown cancellation does not generate polling failure logs.
 
+## Docker
+
+Build the image:
+
+```sh
+docker build -t kafka-connect-healer:local .
+```
+
+The build uses Go 1.27.2 and vendored dependencies, with networking disabled during compilation. The final `scratch` image contains only the stripped, statically linked binary, public HTTPS CA certificates, and dependency licenses. It runs as non-root UID/GID `65532`, contains no shell or package manager, and supports a read-only root filesystem. Build tools and dependency source code are not included in the runtime image. `.dockerignore` limits the build context to source code and vendored dependencies; configuration files and secrets should be mounted at runtime, not built into the image.
+
+To run with YAML files in an existing local `config` directory:
+
+```sh
+docker run --rm --read-only -p 127.0.0.1:8080:8080 \
+  --mount type=bind,src="$PWD/config",dst=/config,readonly \
+  kafka-connect-healer:local \
+  --config=/config/application.yaml \
+  --connect-clusters=/config/connect-clusters.yaml
+```
+
+Mounted files must be readable by UID `65532`. Supply Secret overlay flags the same way when needed. Inside the container, `localhost` refers to the container itself; configure a reachable Kafka Connect hostname instead of relying on the default localhost endpoint. For Kubernetes, use the mounted file paths described below.
+
+Build for another architecture with `docker buildx build --platform=linux/amd64 --load -t kafka-connect-healer:local .`; the Dockerfile cross-compiles for the selected target platform.
+
 ## Configuration
 
 Both configuration packages read their own files once at startup, in this order:
@@ -184,6 +208,17 @@ curl -X PUT http://localhost:8080/clusters/production \
 `DELETE /clusters/{name}` cancels that cluster's poller, waits for it to exit, and removes its definition before returning `204`. An unknown name returns `404`. Removal stops future polling but cannot undo restart requests already accepted by Kafka Connect. PUT and DELETE return `503` when the application is shutting down. New pollers use the application's lifetime context, so completing an API request does not stop them.
 
 Cluster updates are also in-memory only. Startup YAML files remain untouched, and restarting restores the definitions from those files. API authentication settings remain startup-only.
+
+## License
+
+Kafka Connect Healer is licensed under the [Apache License, Version 2.0](LICENSE).
+Third-party dependencies retain their own licenses and notices, which are preserved in `vendor/` and included in the Docker image.
+
+## Vendored dependencies
+
+`vendor/` contains copies of the dependency packages needed to build and test the application; currently this is `go.yaml.in/yaml/v3`. Go automatically uses this directory for ordinary builds and tests when it is present. The Docker build explicitly uses `-mod=vendor`, so compilation does not download dependencies. Vendoring is optional for Go modules, but useful when builds must work without access to a module proxy. It does not reduce the runtime image size; only compiled code is included in the binary.
+
+After changing dependencies in `go.mod`, run `go mod vendor` and commit the updated vendor tree. Do not edit vendored source files directly. See [Go's vendoring documentation](https://go.dev/ref/mod#vendoring).
 
 ## Tests
 

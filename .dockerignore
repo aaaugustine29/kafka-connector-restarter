@@ -1,0 +1,11 @@
+# Only send build inputs; configuration files and secrets stay outside the context.
+**
+!go.mod
+!LICENSE
+!vendor/
+!vendor/**
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+**/*_test.go
