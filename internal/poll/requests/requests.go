@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/connectcluster"
 )
 
 type ConnectAPI struct {

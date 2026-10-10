@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
 )
 
 // json/v2 rejects duplicate keys itself. Inspect tokens only to enforce our

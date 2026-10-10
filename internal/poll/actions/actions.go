@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"entropicworks.com/kafka-connect-healer/internal/poll/requests"
-	"entropicworks.com/kafka-connect-healer/internal/poll/status"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll/requests"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll/status"
 )
 
 type RemediationAction struct {

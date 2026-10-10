@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
-	"entropicworks.com/kafka-connect-healer/internal/poll"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/connectcluster"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll"
 )
 
 type ClustersHandler struct {

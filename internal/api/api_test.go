@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
-	"entropicworks.com/kafka-connect-healer/internal/poll"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll"
 )
 
 func newTestServer(t *testing.T, configurationManager *config.Manager) *http.Server {

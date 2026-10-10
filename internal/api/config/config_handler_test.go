@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
 )
 
 func newPatchRequest(body string) *http.Request {

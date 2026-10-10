@@ -2,6 +2,7 @@
 **
 !go.mod
 !LICENSE
+!NOTICE
 !vendor/
 !vendor/**
 !cmd/

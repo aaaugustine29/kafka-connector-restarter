@@ -1,10 +1,23 @@
-# kafka-connect-healer
+# Kafka Connect Healer
+
+An open-source project maintained by **Entropic Works, Inc.**, created by [Aaron Augustine](https://github.com/aaaugustine29).
+
+The source repository, issue tracker, and pull requests are hosted at [Entropic-Works/kafka-connect-healer](https://github.com/Entropic-Works/kafka-connect-healer).
 
 Polls the REST APIs of named Kafka Connect clusters and restarts failed connectors. When task restarts are enabled, it also restarts failed tasks whose connector is running. Polling begins after the first interval; the service stops on SIGINT or SIGTERM.
 
 ## Run
 
-Requires Go 1.27.2 or later. Run with all default values:
+Requires Go 1.27.2 or later.
+
+Clone the repository first:
+
+```sh
+git clone https://github.com/Entropic-Works/kafka-connect-healer.git
+cd kafka-connect-healer
+```
+
+Run with all default values:
 
 ```sh
 go run ./cmd/kafka-connect-healer
@@ -15,6 +28,8 @@ Build the application binary:
 ```sh
 go build -o bin/kafka-connect-healer ./cmd/kafka-connect-healer
 ```
+
+The Go module path is `github.com/Entropic-Works/kafka-connect-healer`. Application packages remain under `internal/`; this project is a service, not a public Go library.
 
 Supply optional application settings and cluster definitions using separate YAML files:
 
@@ -210,6 +225,8 @@ curl -X PUT http://localhost:8080/clusters/production \
 Cluster updates are also in-memory only. Startup YAML files remain untouched, and restarting restores the definitions from those files. API authentication settings remain startup-only.
 
 ## License
+
+Copyright 2026 Entropic Works, Inc. See [NOTICE](NOTICE) for attribution.
 
 Kafka Connect Healer is licensed under the [Apache License, Version 2.0](LICENSE).
 Third-party dependencies retain their own licenses and notices, which are preserved in `vendor/` and included in the Docker image.

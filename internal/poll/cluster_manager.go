@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
-	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/connectcluster"
 )
 
 var (

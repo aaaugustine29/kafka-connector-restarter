@@ -1,4 +1,4 @@
-module entropicworks.com/kafka-connect-healer
+module github.com/Entropic-Works/kafka-connect-healer
 
 go 1.27.2
 

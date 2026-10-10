@@ -5,7 +5,7 @@ import (
 	"crypto/subtle"
 	"net/http"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
 )
 
 func basicAuth(next http.Handler, auth config.AuthConfiguration) http.Handler {

@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
-	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
-	"entropicworks.com/kafka-connect-healer/internal/poll/actions"
-	"entropicworks.com/kafka-connect-healer/internal/poll/backoff"
-	"entropicworks.com/kafka-connect-healer/internal/poll/status"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/connectcluster"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll/actions"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll/backoff"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll/status"
 )
 
 func TestPollStopsBeforeNextTick(t *testing.T) {

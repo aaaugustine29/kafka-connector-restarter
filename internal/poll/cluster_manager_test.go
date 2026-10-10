@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
-	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/connectcluster"
 )
 
 func newLifecycleTestManager(t *testing.T) *ClusterManager {

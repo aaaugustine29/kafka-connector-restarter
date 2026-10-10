@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
-	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
-	"entropicworks.com/kafka-connect-healer/internal/poll"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/connectcluster"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll"
 )
 
 func newTestHandler(t *testing.T) (*ClustersHandler, *poll.ClusterManager) {

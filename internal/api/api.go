@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	"entropicworks.com/kafka-connect-healer/internal/api/clusters"
-	configAPI "entropicworks.com/kafka-connect-healer/internal/api/config"
-	"entropicworks.com/kafka-connect-healer/internal/config"
-	"entropicworks.com/kafka-connect-healer/internal/poll"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/api/clusters"
+	configAPI "github.com/Entropic-Works/kafka-connect-healer/internal/api/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/poll"
 )
 
 type Components struct {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"entropicworks.com/kafka-connect-healer/internal/config"
+	"github.com/Entropic-Works/kafka-connect-healer/internal/config"
 )
 
 func TestAPIAuthentication(t *testing.T) {
