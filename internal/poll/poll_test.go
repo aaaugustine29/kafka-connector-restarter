@@ -74,7 +74,7 @@ func TestPollCancellationInterruptsStatusRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	configuration := config.DefaultConfiguration()
-	clusterConfiguration := connectcluster.ConnectClusterAPIConfiguration{Host: serverURL.Hostname(), Port: serverURL.Port()}
+	clusterConfiguration := connectcluster.Configuration{Host: serverURL.Hostname(), Port: serverURL.Port()}
 	configuration.PollingBehavior.Interval = config.Duration(10 * time.Millisecond)
 	// A long timeout proves cancellation ends the request, rather than timeout.
 	configuration.CommunicationConfig.RequestTimeout = config.Duration(time.Hour)
@@ -113,7 +113,7 @@ func TestFilterByBackoffs(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		statuses map[string]backoff.BackoffStatus
+		statuses map[string]backoff.Status
 		actions  []actions.RemediationAction
 		expected []actions.RemediationAction
 	}{
@@ -130,8 +130,8 @@ func TestFilterByBackoffs(t *testing.T) {
 		},
 		{
 			name: "connector restart in the window is omitted",
-			statuses: map[string]backoff.BackoffStatus{
-				fmt.Sprintf(backoff.ConnectorKeyFormat, "source-connector"): {
+			statuses: map[string]backoff.Status{
+				"source-connector": {
 					LastAttemptTime: recentAttempt,
 				},
 			},
@@ -142,7 +142,7 @@ func TestFilterByBackoffs(t *testing.T) {
 		},
 		{
 			name: "task restart in the window is omitted",
-			statuses: map[string]backoff.BackoffStatus{
+			statuses: map[string]backoff.Status{
 				fmt.Sprintf(backoff.TaskKeyFormat, "sink-connector", 1): {
 					LastAttemptTime: recentAttempt,
 				},
@@ -159,7 +159,7 @@ func TestFilterByBackoffs(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			filter := backoff.BackoffFilter{
+			filter := backoff.Filter{
 				BackoffConfig:   backoffConfig,
 				BackoffStatuses: test.statuses,
 			}
@@ -171,9 +171,76 @@ func TestFilterByBackoffs(t *testing.T) {
 	}
 }
 
+func TestPruneBackoffsForMissingStatuses(t *testing.T) {
+	connectorAttempt := backoff.Status{LastAttemptTime: time.Now(), Attempts: 3}
+	taskAttempt := backoff.Status{LastAttemptTime: time.Now().Add(-time.Minute), Attempts: 2}
+	taskKey := fmt.Sprintf(backoff.TaskKeyFormat, "connector-a", 0)
+	tests := []struct {
+		name     string
+		statuses map[string]status.ConnectorStatus
+		expected map[string]backoff.Status
+	}{
+		{
+			name: "present connector and task retain their history",
+			statuses: map[string]status.ConnectorStatus{
+				"connector-a": {Name: "connector-a", Tasks: []status.TaskStatus{{ID: 0}}},
+			},
+			expected: map[string]backoff.Status{"connector-a": connectorAttempt, taskKey: taskAttempt},
+		},
+		{
+			name: "deleted connector clears connector and task history",
+			statuses: map[string]status.ConnectorStatus{
+				"connector-b": {Name: "connector-b", Tasks: []status.TaskStatus{{ID: 0}}},
+			},
+			expected: map[string]backoff.Status{},
+		},
+		{
+			name: "deleted task clears only its own history",
+			statuses: map[string]status.ConnectorStatus{
+				"connector-a": {Name: "connector-a", Tasks: []status.TaskStatus{{ID: 1}}},
+			},
+			expected: map[string]backoff.Status{"connector-a": connectorAttempt},
+		},
+		{
+			name:     "empty successful snapshot clears all history",
+			statuses: map[string]status.ConnectorStatus{},
+			expected: map[string]backoff.Status{},
+		},
+		{
+			name: "paused statuses are still present",
+			statuses: map[string]status.ConnectorStatus{
+				"connector-a": {
+					Name: "connector-a", Connector: status.WorkerStatus{State: "PAUSED"},
+					Tasks: []status.TaskStatus{{ID: 0, State: "PAUSED"}},
+				},
+			},
+			expected: map[string]backoff.Status{"connector-a": connectorAttempt, taskKey: taskAttempt},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			filter := backoff.Filter{
+				BackoffStatuses: map[string]backoff.Status{"connector-a": connectorAttempt, taskKey: taskAttempt},
+			}
+			pruneBackoffsForMissingStatuses(&filter, test.statuses)
+			if !maps.Equal(filter.BackoffStatuses, test.expected) {
+				t.Fatalf("backoff statuses = %#v, want %#v", filter.BackoffStatuses, test.expected)
+			}
+		})
+	}
+
+	t.Run("no stored history remains unallocated", func(t *testing.T) {
+		filter := backoff.Filter{}
+		pruneBackoffsForMissingStatuses(&filter, nil)
+		if filter.BackoffStatuses != nil {
+			t.Fatalf("backoff statuses = %#v, want nil", filter.BackoffStatuses)
+		}
+	})
+}
+
 func TestResetBackoffsForHealthyStatuses(t *testing.T) {
-	filter := backoff.BackoffFilter{
-		BackoffStatuses: map[string]backoff.BackoffStatus{
+	filter := backoff.Filter{
+		BackoffStatuses: map[string]backoff.Status{
 			"healthy-connector": {Attempts: 1},
 			fmt.Sprintf(backoff.TaskKeyFormat, "healthy-connector", 1): {Attempts: 1},
 			fmt.Sprintf(backoff.TaskKeyFormat, "healthy-connector", 2): {Attempts: 1},
@@ -199,7 +266,7 @@ func TestResetBackoffsForHealthyStatuses(t *testing.T) {
 
 	resetBackoffsForHealthyStatuses(&filter, connectorStatuses)
 
-	expected := map[string]backoff.BackoffStatus{
+	expected := map[string]backoff.Status{
 		fmt.Sprintf(backoff.TaskKeyFormat, "healthy-connector", 2): {Attempts: 1},
 		"failed-connector": {Attempts: 1},
 		fmt.Sprintf(backoff.TaskKeyFormat, "failed-connector", 1): {Attempts: 1},
@@ -264,7 +331,7 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 		t.Fatalf("parse test server URL: %v", err)
 	}
 
-	clusterConfiguration := connectcluster.ConnectClusterAPIConfiguration{
+	clusterConfiguration := connectcluster.Configuration{
 		Host: serverURL.Hostname(), Port: serverURL.Port(), HTTPS: serverURL.Scheme == "https",
 	}
 	pollConfig := config.ApplicationConfiguration{
@@ -331,6 +398,19 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 	checkCycle("new failures are restarted", statusResponse{http.StatusOK, failedStatuses}, restarts)
 	checkCycle("status retrieval error does not reset backoff", statusResponse{http.StatusInternalServerError, ""}, nil)
 	checkCycle("failures after retrieval error remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
+	checkCycle("malformed status response does not reset backoff", statusResponse{http.StatusOK, "{"}, nil)
+	checkCycle("failures after decoding error remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
+	checkCycle("deleted task clears task backoff", statusResponse{http.StatusOK, `{
+		"connector-a": {"status": {"name": "connector-a", "connector": {"state": "FAILED"}, "tasks": []}},
+		"connector-b": {"status": {"name": "connector-b", "connector": {"state": "RUNNING"}, "tasks": []}}
+	}`}, nil)
+	checkCycle("reappearing task is restarted", statusResponse{http.StatusOK, failedStatuses}, []string{restarts[1]})
+	checkCycle("deleted connector clears connector backoff", statusResponse{http.StatusOK, `{
+		"connector-b": {"status": {"name": "connector-b", "connector": {"state": "RUNNING"}, "tasks": [{"id": 2, "state": "FAILED"}]}}
+	}`}, nil)
+	checkCycle("reappearing connector is restarted", statusResponse{http.StatusOK, failedStatuses}, []string{restarts[0]})
+	checkCycle("empty successful response clears all backoff", statusResponse{http.StatusOK, "{}"}, nil)
+	checkCycle("failures after empty snapshot are restarted", statusResponse{http.StatusOK, failedStatuses}, restarts)
 }
 
 func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *testing.T) {
@@ -369,7 +449,7 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 		if err != nil {
 			t.Fatal(err)
 		}
-		poller := NewConnectClusterPoller(name, connectcluster.ConnectClusterAPIConfiguration{
+		poller := NewConnectClusterPoller(name, connectcluster.Configuration{
 			Host: serverURL.Hostname(), Port: serverURL.Port(),
 		})
 		pollers[name] = poller
@@ -406,7 +486,7 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 	}
 	clients := make(map[string]*http.Client)
 	for name, poller := range pollers {
-		clients[name] = poller.connect.HTTPClient
+		clients[name] = poller.connectClient.HTTPClient
 	}
 	if err := manager.UpdateConfiguration(func(application *config.ApplicationConfiguration) error {
 		application.PollingBehavior.Interval = config.Duration(5 * time.Millisecond)
@@ -427,13 +507,13 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 	}
 	stop()
 	for name, poller := range pollers {
-		if poller.connect.HTTPClient != clients[name] {
+		if poller.connectClient.HTTPClient != clients[name] {
 			t.Fatalf("cluster %q replaced its HTTP client during an application update", name)
 		}
 		if posts[name] != 1 {
 			t.Fatalf("cluster %q made %d restarts, want one independent attempt", name, posts[name])
 		}
-		if poller.connect.HTTPClient.Timeout != 250*time.Millisecond || poller.backoffFilter.BackoffConfig.Exponential {
+		if poller.connectClient.HTTPClient.Timeout != 250*time.Millisecond || poller.backoffFilter.BackoffConfig.Exponential {
 			t.Fatalf("cluster %q did not apply shared application settings", name)
 		}
 		if len(poller.backoffFilter.BackoffStatuses) != 1 || poller.backoffFilter.BackoffStatuses["shared-connector"].Attempts != 1 {
@@ -512,7 +592,7 @@ func TestBlockedClusterDoesNotStopOtherPollers(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		poller := NewConnectClusterPoller(name, connectcluster.ConnectClusterAPIConfiguration{
+		poller := NewConnectClusterPoller(name, connectcluster.Configuration{
 			Host: serverURL.Hostname(), Port: serverURL.Port(),
 		})
 		workers.Go(func() { poller.Poll(ctx, manager) })
@@ -567,7 +647,7 @@ func TestPollTimeoutUpdateAppliesToRequestsWithoutReplacingClient(t *testing.T) 
 	configuration.PollingBehavior.Interval = config.Duration(10 * time.Millisecond)
 	configuration.CommunicationConfig.RequestTimeout = config.Duration(time.Second)
 	manager := config.NewManager(configuration)
-	poller := NewConnectClusterPoller("test", connectcluster.ConnectClusterAPIConfiguration{
+	poller := NewConnectClusterPoller("test", connectcluster.Configuration{
 		Host: serverURL.Hostname(), Port: serverURL.Port(),
 	})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -586,7 +666,7 @@ func TestPollTimeoutUpdateAppliesToRequestsWithoutReplacingClient(t *testing.T) 
 	case <-time.After(5 * time.Second):
 		t.Fatal("poller did not retrieve its initial statuses")
 	}
-	client := poller.connect.HTTPClient
+	client := poller.connectClient.HTTPClient
 	if err := manager.UpdateConfiguration(func(application *config.ApplicationConfiguration) error {
 		application.CommunicationConfig.RequestTimeout = config.Duration(30 * time.Millisecond)
 		return nil
@@ -602,7 +682,7 @@ func TestPollTimeoutUpdateAppliesToRequestsWithoutReplacingClient(t *testing.T) 
 			if duration < 500*time.Millisecond {
 				cancel()
 				<-finished
-				if poller.connect.HTTPClient != client || client.Timeout != 30*time.Millisecond {
+				if poller.connectClient.HTTPClient != client || client.Timeout != 30*time.Millisecond {
 					t.Fatal("timeout update replaced the client or did not apply the new timeout")
 				}
 				return

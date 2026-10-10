@@ -8,7 +8,7 @@ import (
 	"unicode"
 )
 
-func ValidateConfiguration(configuration ConnectClusterAPIConfiguration) error {
+func ValidateConfiguration(configuration Configuration) error {
 	if strings.TrimSpace(configuration.Host) == "" {
 		return fmt.Errorf("host: Connect host must not be empty")
 	}

@@ -68,7 +68,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	apiComponents := api.APIComponents{
+	apiComponents := api.Components{
 		ConfigurationManager: configurationManager,
 		ClusterManager:       clusterManager,
 	}

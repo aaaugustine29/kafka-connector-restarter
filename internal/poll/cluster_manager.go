@@ -18,7 +18,7 @@ var (
 )
 
 type clusterWorker struct {
-	configuration connectcluster.ConnectClusterAPIConfiguration
+	configuration connectcluster.Configuration
 	cancel        context.CancelFunc
 	done          chan struct{}
 }
@@ -33,7 +33,7 @@ type ClusterManager struct {
 	closed               bool
 }
 
-func NewClusterManager(applicationContext context.Context, configurationManager *config.Manager, clusters map[string]connectcluster.ConnectClusterAPIConfiguration) (*ClusterManager, error) {
+func NewClusterManager(applicationContext context.Context, configurationManager *config.Manager, clusters map[string]connectcluster.Configuration) (*ClusterManager, error) {
 	if applicationContext.Err() != nil {
 		return nil, ErrClusterManagerClosed
 	}
@@ -53,10 +53,10 @@ func NewClusterManager(applicationContext context.Context, configurationManager 
 	return manager, nil
 }
 
-func (manager *ClusterManager) GetClusters() map[string]connectcluster.ConnectClusterAPIConfiguration {
+func (manager *ClusterManager) GetClusters() map[string]connectcluster.Configuration {
 	manager.clustersMutex.RLock()
 	defer manager.clustersMutex.RUnlock()
-	clusters := make(map[string]connectcluster.ConnectClusterAPIConfiguration, len(manager.clusterWorkers))
+	clusters := make(map[string]connectcluster.Configuration, len(manager.clusterWorkers))
 	for name, worker := range manager.clusterWorkers {
 		clusters[name] = worker.configuration
 	}
@@ -64,7 +64,7 @@ func (manager *ClusterManager) GetClusters() map[string]connectcluster.ConnectCl
 }
 
 // PutCluster replaces one complete definition. Identical definitions are a no-op.
-func (manager *ClusterManager) PutCluster(name string, configuration connectcluster.ConnectClusterAPIConfiguration) (bool, error) {
+func (manager *ClusterManager) PutCluster(name string, configuration connectcluster.Configuration) (bool, error) {
 	if err := validateCluster(name, configuration); err != nil {
 		return false, err
 	}
@@ -135,7 +135,7 @@ func (manager *ClusterManager) Close() {
 	}
 }
 
-func (manager *ClusterManager) startCluster(name string, configuration connectcluster.ConnectClusterAPIConfiguration) *clusterWorker {
+func (manager *ClusterManager) startCluster(name string, configuration connectcluster.Configuration) *clusterWorker {
 	ctx, cancel := context.WithCancel(manager.applicationContext)
 	worker := &clusterWorker{configuration: configuration, cancel: cancel, done: make(chan struct{})}
 	poller := NewConnectClusterPoller(name, configuration)
@@ -147,7 +147,7 @@ func (manager *ClusterManager) startCluster(name string, configuration connectcl
 	return worker
 }
 
-func validateCluster(name string, configuration connectcluster.ConnectClusterAPIConfiguration) error {
+func validateCluster(name string, configuration connectcluster.Configuration) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("cluster name must not be empty")
 	}

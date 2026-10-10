@@ -39,20 +39,20 @@ func (m *Manager) UpdateConfiguration(changeConfig func(*ApplicationConfiguratio
 	m.configurationMutex.Lock()
 	defer m.configurationMutex.Unlock()
 
-	next := m.configuration
-	if err := changeConfig(&next); err != nil {
+	nextConfiguration := m.configuration
+	if err := changeConfig(&nextConfiguration); err != nil {
 		return err
 	}
-	if next.APIConfig != m.configuration.APIConfig {
+	if nextConfiguration.APIConfig != m.configuration.APIConfig {
 		return fmt.Errorf("apiConfig: API authentication is startup-only; update the YAML configuration and restart")
 	}
-	if err := ValidateConfiguration(next); err != nil {
+	if err := ValidateConfiguration(nextConfiguration); err != nil {
 		return err
 	}
-	if next == m.configuration {
+	if nextConfiguration == m.configuration {
 		return nil
 	}
-	m.configuration = next
+	m.configuration = nextConfiguration
 	close(m.configurationUpdateChannel)
 	m.configurationUpdateChannel = make(chan struct{})
 	return nil

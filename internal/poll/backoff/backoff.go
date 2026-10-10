@@ -7,22 +7,19 @@ import (
 	"entropicworks.com/kafka-connect-healer/internal/config"
 )
 
-const (
-	ConnectorKeyFormat string = "%s"
-	TaskKeyFormat      string = "ConnectorName-%s_TaskID-%d"
-)
+const TaskKeyFormat string = "ConnectorName-%s_TaskID-%d"
 
-type BackoffStatus struct {
+type Status struct {
 	LastAttemptTime time.Time
 	Attempts        int
 }
 
-type BackoffFilter struct {
+type Filter struct {
 	BackoffConfig   config.BackoffConfiguration
-	BackoffStatuses map[string]BackoffStatus
+	BackoffStatuses map[string]Status
 }
 
-func (backoffFilter *BackoffFilter) UpdateBackoffStatus(attemptTime time.Time, connectorName string, taskID *int) {
+func (backoffFilter *Filter) UpdateBackoffStatus(attemptTime time.Time, connectorName string, taskID *int) {
 	key := getKey(connectorName, taskID)
 	status := backoffFilter.BackoffStatuses[key]
 	status.LastAttemptTime = attemptTime
@@ -30,12 +27,12 @@ func (backoffFilter *BackoffFilter) UpdateBackoffStatus(attemptTime time.Time, c
 	backoffFilter.BackoffStatuses[key] = status
 }
 
-func (backoffFilter *BackoffFilter) ResetBackoffStatus(connectorName string, taskID *int) {
+func (backoffFilter *Filter) ResetBackoffStatus(connectorName string, taskID *int) {
 	key := getKey(connectorName, taskID)
 	delete(backoffFilter.BackoffStatuses, key)
 }
 
-func (backoffFilter *BackoffFilter) IsInBackoffWindow(connectorName string, taskID *int) bool {
+func (backoffFilter *Filter) IsInBackoffWindow(connectorName string, taskID *int) bool {
 	backoffStatus := backoffFilter.getBackoffStatus(connectorName, taskID)
 
 	nextBackoffTime := determineNextActionTime(
@@ -54,9 +51,9 @@ func (backoffFilter *BackoffFilter) IsInBackoffWindow(connectorName string, task
 	}
 }
 
-func (backoffFilter *BackoffFilter) getBackoffStatus(
+func (backoffFilter *Filter) getBackoffStatus(
 	connectorName string, taskID *int,
-) BackoffStatus {
+) Status {
 	return backoffFilter.BackoffStatuses[getKey(connectorName, taskID)]
 }
 
@@ -88,7 +85,7 @@ func determineNextActionTime(
 
 func getKey(connectorName string, taskID *int) string {
 	if taskID == nil {
-		return fmt.Sprintf(ConnectorKeyFormat, connectorName)
+		return connectorName
 	} else {
 		return fmt.Sprintf(TaskKeyFormat, connectorName, *taskID)
 	}

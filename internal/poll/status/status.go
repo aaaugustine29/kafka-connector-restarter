@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"entropicworks.com/kafka-connect-healer/internal/poll/utils/requests"
+	"entropicworks.com/kafka-connect-healer/internal/poll/requests"
 )
 
 const defaultConnectorStatusPath = "/connectors?expand=status"

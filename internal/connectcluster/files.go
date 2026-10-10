@@ -16,8 +16,8 @@ import (
 // LoadFiles applies per-cluster defaults, an optional base file, then an optional
 // Secret overlay. Omitting the base file starts with the default localhost cluster.
 // Values are validated only after both files have been merged.
-func LoadFiles(basePath, secretPath string) (map[string]ConnectClusterAPIConfiguration, error) {
-	clusters := make(map[string]ConnectClusterAPIConfiguration)
+func LoadFiles(basePath, secretPath string) (map[string]Configuration, error) {
+	clusters := make(map[string]Configuration)
 	if basePath == "" {
 		clusters["default"] = DefaultConfiguration()
 	} else {
@@ -40,7 +40,7 @@ func LoadFiles(basePath, secretPath string) (map[string]ConnectClusterAPIConfigu
 }
 
 // WarnDuplicateEndpoints compares literal endpoints without DNS lookups or credentials.
-func WarnDuplicateEndpoints(clusters map[string]ConnectClusterAPIConfiguration) {
+func WarnDuplicateEndpoints(clusters map[string]Configuration) {
 	seen := make(map[string]string)
 	for _, name := range slices.Sorted(maps.Keys(clusters)) {
 		configuration := clusters[name]
@@ -63,7 +63,7 @@ func WarnDuplicateEndpoints(clusters map[string]ConnectClusterAPIConfiguration) 
 	}
 }
 
-func decodeFile(path string, clusters map[string]ConnectClusterAPIConfiguration) error {
+func decodeFile(path string, clusters map[string]Configuration) error {
 	root, err := yamlconfig.ReadFile(path)
 	if err != nil {
 		return err

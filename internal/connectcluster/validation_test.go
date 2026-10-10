@@ -37,27 +37,27 @@ func TestValidateConnectHost(t *testing.T) {
 
 func TestValidatePortAndAuthentication(t *testing.T) {
 	for _, test := range []struct {
-		configuration ConnectClusterAPIConfiguration
+		configuration Configuration
 		want          string
 	}{
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "65536"}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "not-a-port"}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "0"}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "+8083"}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "-8083"}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: " 8083"}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083 "}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "８０８３"}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: ""}, "port:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "0008083"}, ""},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "1"}, ""},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "65535"}, ""},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083", AuthConfig: AuthConfiguration{Enabled: true}}, "https:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Password: "secret"}}, "authConfig.username:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Username: "user"}}, "authConfig.password:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Username: "team:user", Password: "secret"}}, "authConfig.username:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Username: " ", Password: "secret"}}, "authConfig.username:"},
-		{ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Username: "user", Password: "secret"}}, ""},
+		{Configuration{Host: "localhost", Port: "65536"}, "port:"},
+		{Configuration{Host: "localhost", Port: "not-a-port"}, "port:"},
+		{Configuration{Host: "localhost", Port: "0"}, "port:"},
+		{Configuration{Host: "localhost", Port: "+8083"}, "port:"},
+		{Configuration{Host: "localhost", Port: "-8083"}, "port:"},
+		{Configuration{Host: "localhost", Port: " 8083"}, "port:"},
+		{Configuration{Host: "localhost", Port: "8083 "}, "port:"},
+		{Configuration{Host: "localhost", Port: "８０８３"}, "port:"},
+		{Configuration{Host: "localhost", Port: ""}, "port:"},
+		{Configuration{Host: "localhost", Port: "0008083"}, ""},
+		{Configuration{Host: "localhost", Port: "1"}, ""},
+		{Configuration{Host: "localhost", Port: "65535"}, ""},
+		{Configuration{Host: "localhost", Port: "8083", AuthConfig: AuthConfiguration{Enabled: true}}, "https:"},
+		{Configuration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Password: "secret"}}, "authConfig.username:"},
+		{Configuration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Username: "user"}}, "authConfig.password:"},
+		{Configuration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Username: "team:user", Password: "secret"}}, "authConfig.username:"},
+		{Configuration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Username: " ", Password: "secret"}}, "authConfig.username:"},
+		{Configuration{Host: "localhost", Port: "8083", HTTPS: true, AuthConfig: AuthConfiguration{Enabled: true, Username: "user", Password: "secret"}}, ""},
 	} {
 		err := ValidateConfiguration(test.configuration)
 		if test.want == "" {

@@ -49,7 +49,7 @@ func TestGetClustersRedactsPasswordsWithoutChangingStoredValues(t *testing.T) {
 	}
 	// Decode the configuration normally, then inspect the actual JSON for an
 	// omitted password rather than merely a password with an empty value.
-	var definitions map[string]connectcluster.ConnectClusterAPIConfiguration
+	var definitions map[string]connectcluster.Configuration
 	if err := json.Unmarshal(response.Body.Bytes(), &definitions); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestPutClusterCreatesAndCompletelyReplacesDefinition(t *testing.T) {
 	if response.Code != http.StatusNoContent || response.Body.Len() != 0 || response.Header().Get("Location") != "" {
 		t.Fatalf("replace = %d %q", response.Code, response.Body.String())
 	}
-	expected := connectcluster.ConnectClusterAPIConfiguration{Host: "replacement.local", Port: "8084"}
+	expected := connectcluster.Configuration{Host: "replacement.local", Port: "8084"}
 	if manager.GetClusters()["production"] != expected {
 		t.Fatal("PUT retained omitted values from the previous definition")
 	}

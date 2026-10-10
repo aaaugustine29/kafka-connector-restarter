@@ -1,4 +1,4 @@
-package home
+package api
 
 import (
 	"encoding/json/v2"
@@ -12,7 +12,7 @@ type routeInfo struct {
 	Functionality string `json:"functionality"`
 }
 
-func HomeHandler(w http.ResponseWriter, r *http.Request) {
+func homeHandler(w http.ResponseWriter, r *http.Request) {
 	routes := []routeInfo{
 		{
 			Method:        "GET",

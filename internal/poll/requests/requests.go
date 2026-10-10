@@ -17,7 +17,7 @@ type ConnectAPI struct {
 }
 
 // NewConnectAPI creates the HTTP client used for one cluster's status and restart requests.
-func NewConnectAPI(configuration connectcluster.ConnectClusterAPIConfiguration, requestTimeout time.Duration) ConnectAPI {
+func NewConnectAPI(configuration connectcluster.Configuration, requestTimeout time.Duration) ConnectAPI {
 	client := &http.Client{
 		Timeout: requestTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {

@@ -60,10 +60,10 @@ func TestDetermineNextActionTime(t *testing.T) {
 
 func TestGetBackoffStatus(t *testing.T) {
 	taskID := 3
-	connectorStatus := BackoffStatus{Attempts: 1}
-	taskStatus := BackoffStatus{Attempts: 2}
-	filter := BackoffFilter{
-		BackoffStatuses: map[string]BackoffStatus{
+	connectorStatus := Status{Attempts: 1}
+	taskStatus := Status{Attempts: 2}
+	filter := Filter{
+		BackoffStatuses: map[string]Status{
 			getKey("source-connector", nil):   connectorStatus,
 			getKey("sink-connector", &taskID): taskStatus,
 		},
@@ -81,22 +81,22 @@ func TestUpdateBackoffStatus(t *testing.T) {
 	firstAttempt := time.Date(2026, time.September, 20, 12, 0, 0, 0, time.UTC)
 	secondAttempt := firstAttempt.Add(time.Minute)
 	taskID := 3
-	filter := BackoffFilter{
-		BackoffStatuses: map[string]BackoffStatus{},
+	filter := Filter{
+		BackoffStatuses: map[string]Status{},
 	}
 
 	filter.UpdateBackoffStatus(firstAttempt, "source-connector", nil)
 	filter.UpdateBackoffStatus(secondAttempt, "source-connector", nil)
 	filter.UpdateBackoffStatus(firstAttempt, "sink-connector", &taskID)
 
-	if got, want := filter.getBackoffStatus("source-connector", nil), (BackoffStatus{
+	if got, want := filter.getBackoffStatus("source-connector", nil), (Status{
 		LastAttemptTime: secondAttempt,
 		Attempts:        2,
 	}); got != want {
 		t.Fatalf("connector backoff status = %#v, want %#v", got, want)
 	}
 
-	if got, want := filter.getBackoffStatus("sink-connector", &taskID), (BackoffStatus{
+	if got, want := filter.getBackoffStatus("sink-connector", &taskID), (Status{
 		LastAttemptTime: firstAttempt,
 		Attempts:        1,
 	}); got != want {
@@ -106,8 +106,8 @@ func TestUpdateBackoffStatus(t *testing.T) {
 
 func TestResetBackoffStatus(t *testing.T) {
 	taskID := 3
-	filter := BackoffFilter{
-		BackoffStatuses: map[string]BackoffStatus{
+	filter := Filter{
+		BackoffStatuses: map[string]Status{
 			getKey("source-connector", nil):   {Attempts: 1},
 			getKey("sink-connector", &taskID): {Attempts: 1},
 		},
@@ -130,7 +130,7 @@ func TestIsInBackoffWindow(t *testing.T) {
 	tests := []struct {
 		name     string
 		isTask   bool
-		status   BackoffStatus
+		status   Status
 		expected bool
 	}{
 		{
@@ -139,18 +139,18 @@ func TestIsInBackoffWindow(t *testing.T) {
 		},
 		{
 			name:     "recent connector restart remains in the backoff window",
-			status:   BackoffStatus{LastAttemptTime: time.Now().Add(-30 * time.Minute)},
+			status:   Status{LastAttemptTime: time.Now().Add(-30 * time.Minute)},
 			expected: true,
 		},
 		{
 			name:     "expired connector backoff window permits an action",
-			status:   BackoffStatus{LastAttemptTime: time.Now().Add(-2 * time.Hour)},
+			status:   Status{LastAttemptTime: time.Now().Add(-2 * time.Hour)},
 			expected: false,
 		},
 		{
 			name:     "recent task restart remains in the backoff window",
 			isTask:   true,
-			status:   BackoffStatus{LastAttemptTime: time.Now().Add(-30 * time.Minute)},
+			status:   Status{LastAttemptTime: time.Now().Add(-30 * time.Minute)},
 			expected: true,
 		},
 	}
@@ -163,9 +163,9 @@ func TestIsInBackoffWindow(t *testing.T) {
 				taskID = &id
 			}
 
-			filter := BackoffFilter{
+			filter := Filter{
 				BackoffConfig: backoffConfig,
-				BackoffStatuses: map[string]BackoffStatus{
+				BackoffStatuses: map[string]Status{
 					getKey("connector", taskID): test.status,
 				},
 			}

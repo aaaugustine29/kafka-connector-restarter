@@ -126,7 +126,7 @@ Configuration is only read at startup. Updating a mounted file does not change t
 
 Backoff is tracked separately for each cluster, connector restart, and task restart. Identical connector names in different clusters do not share backoff state. With exponential backoff enabled, the delay after attempt number `n` is `min(base delay × 2^(n−1), maximum delay)`. For example, the default delays begin at 20 seconds, then 40 seconds, 80 seconds, and so on up to 10 minutes. When exponential backoff is disabled, each attempt uses the base delay. Failed connectors are restarted regardless of `pollingBehavior.restartFailedTasks`; that setting controls failed tasks whose connector is running.
 
-Every outbound restart request counts as an attempt, including requests that return errors. A `RUNNING` connector clears its connector backoff, and a `RUNNING` task clears that task's backoff; a future failure then starts again at the base delay. If status retrieval fails, no actions or resets happen on that poll.
+Every outbound restart request counts as an attempt, including requests that return errors. A `RUNNING` connector clears its connector backoff, and a `RUNNING` task clears that task's backoff; a future failure then starts again at the base delay. A successful status snapshot also removes backoff entries for connectors and tasks that are no longer present. If status retrieval or decoding fails, no actions, resets, or cleanup happen on that poll.
 
 ## Configuration API
 

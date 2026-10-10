@@ -55,7 +55,7 @@ func (handler *ClustersHandler) PutCluster(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-	var configuration connectcluster.ConnectClusterAPIConfiguration
+	var configuration connectcluster.Configuration
 	if !validClusterJSON(data) || json.Unmarshal(data, &configuration, json.RejectUnknownMembers(true)) != nil {
 		// Decoder errors can contain passwords; do not return the original text.
 		http.Error(w, "cluster configuration must be one valid JSON object with known fields and no null values", http.StatusBadRequest)

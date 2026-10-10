@@ -7,23 +7,22 @@ import (
 
 	"entropicworks.com/kafka-connect-healer/internal/api/clusters"
 	configAPI "entropicworks.com/kafka-connect-healer/internal/api/config"
-	"entropicworks.com/kafka-connect-healer/internal/api/home"
 	"entropicworks.com/kafka-connect-healer/internal/config"
 	"entropicworks.com/kafka-connect-healer/internal/poll"
 )
 
-type APIComponents struct {
+type Components struct {
 	ConfigurationManager *config.Manager
 	ClusterManager       *poll.ClusterManager
 }
 
-func NewServer(components APIComponents) *http.Server {
+func NewServer(components Components) *http.Server {
 	configHandler := configAPI.NewConfigHandler(components.ConfigurationManager)
 	clustersHandler := clusters.NewClustersHandler(components.ClusterManager)
 	configuration := components.ConfigurationManager.GetConfiguration()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", home.HomeHandler)
+	mux.HandleFunc("GET /{$}", homeHandler)
 	mux.HandleFunc("GET /config", configHandler.GetConfig)
 	mux.HandleFunc("PATCH /config", configHandler.PatchConfig)
 	mux.HandleFunc("GET /clusters", clustersHandler.GetClusters)

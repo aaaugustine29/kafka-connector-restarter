@@ -25,7 +25,7 @@ func newTestServer(t *testing.T, configurationManager *config.Manager) *http.Ser
 		t.Fatal(err)
 	}
 	t.Cleanup(clusterManager.Close)
-	return NewServer(APIComponents{ConfigurationManager: configurationManager, ClusterManager: clusterManager})
+	return NewServer(Components{ConfigurationManager: configurationManager, ClusterManager: clusterManager})
 }
 
 func startTestServer(t *testing.T, server *http.Server) string {

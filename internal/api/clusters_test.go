@@ -58,7 +58,7 @@ func TestClusterRoutesOverHTTP(t *testing.T) {
 			t.Fatalf("%s %s = %d, Location %q, body %s", test.method, test.path, response.StatusCode, response.Header.Get("Location"), body)
 		}
 		if test.method == http.MethodGet && test.status == http.StatusOK {
-			var definitions map[string]connectcluster.ConnectClusterAPIConfiguration
+			var definitions map[string]connectcluster.Configuration
 			if err := json.Unmarshal(body, &definitions); err != nil {
 				t.Fatal(err)
 			}
@@ -77,12 +77,12 @@ func TestClusterRouteAuthenticationPreventsChanges(t *testing.T) {
 			configuration.APIConfig.AuthConfig = config.AuthConfiguration{Enabled: true, Username: "user", Password: "secret"}
 			configurationManager := config.NewManager(configuration)
 			clusterManager, err := poll.NewClusterManager(t.Context(), configurationManager,
-				map[string]connectcluster.ConnectClusterAPIConfiguration{"production": connectcluster.DefaultConfiguration()})
+				map[string]connectcluster.Configuration{"production": connectcluster.DefaultConfiguration()})
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(clusterManager.Close)
-			server := NewServer(APIComponents{ConfigurationManager: configurationManager, ClusterManager: clusterManager})
+			server := NewServer(Components{ConfigurationManager: configurationManager, ClusterManager: clusterManager})
 			path := "/clusters/production"
 			if method == http.MethodGet {
 				path = "/clusters"

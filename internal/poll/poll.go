@@ -2,7 +2,9 @@ package poll
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -10,31 +12,31 @@ import (
 	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
 	"entropicworks.com/kafka-connect-healer/internal/poll/actions"
 	"entropicworks.com/kafka-connect-healer/internal/poll/backoff"
+	"entropicworks.com/kafka-connect-healer/internal/poll/requests"
 	"entropicworks.com/kafka-connect-healer/internal/poll/status"
-	"entropicworks.com/kafka-connect-healer/internal/poll/utils/requests"
 )
 
 // ConnectClusterPoller owns the client and backoff state for one cluster.
 // Its mutable state is used only by its polling goroutine.
 type ConnectClusterPoller struct {
 	name                 string
-	connect              requests.ConnectAPI
-	backoffFilter        backoff.BackoffFilter
-	clusterConfiguration connectcluster.ConnectClusterAPIConfiguration
+	connectClient        requests.ConnectAPI
+	backoffFilter        backoff.Filter
+	clusterConfiguration connectcluster.Configuration
 }
 
-func NewConnectClusterPoller(name string, configuration connectcluster.ConnectClusterAPIConfiguration) *ConnectClusterPoller {
+func NewConnectClusterPoller(name string, configuration connectcluster.Configuration) *ConnectClusterPoller {
 	return &ConnectClusterPoller{name: name, clusterConfiguration: configuration}
 }
 
 func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManager *config.Manager) {
 	configuration, configurationUpdateChannel := configurationManager.ConfigurationSnapshot()
-	poller.connect = requests.NewConnectAPI(poller.clusterConfiguration, configuration.CommunicationConfig.RequestTimeout.Duration())
-	poller.backoffFilter = backoff.BackoffFilter{
+	poller.connectClient = requests.NewConnectAPI(poller.clusterConfiguration, configuration.CommunicationConfig.RequestTimeout.Duration())
+	poller.backoffFilter = backoff.Filter{
 		BackoffConfig:   configuration.PollingBehavior.Backoff,
-		BackoffStatuses: map[string]backoff.BackoffStatus{},
+		BackoffStatuses: map[string]backoff.Status{},
 	}
-	logger := slog.With("connect_cluster", poller.name, "endpoint", poller.connect.BaseURL)
+	logger := slog.With("connect_cluster", poller.name, "endpoint", poller.connectClient.BaseURL)
 	logPollingSettings(logger, "polling started", configuration)
 	defer logger.Info("polling stopped")
 
@@ -50,7 +52,7 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 			newConfiguration, configurationUpdateChannel = configurationManager.ConfigurationSnapshot()
 			if newConfiguration.CommunicationConfig != configuration.CommunicationConfig {
 				// Requests run synchronously in this goroutine; update only between cycles.
-				poller.connect.HTTPClient.Timeout = newConfiguration.CommunicationConfig.RequestTimeout.Duration()
+				poller.connectClient.HTTPClient.Timeout = newConfiguration.CommunicationConfig.RequestTimeout.Duration()
 			}
 			if newConfiguration.PollingBehavior.Backoff != configuration.PollingBehavior.Backoff {
 				poller.backoffFilter.BackoffConfig = newConfiguration.PollingBehavior.Backoff
@@ -67,7 +69,7 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 
 		case <-ticker.C:
 			cycleStarted := time.Now()
-			connectorStatuses, err := status.FindConnectorStatuses(ctx, poller.connect)
+			connectorStatuses, err := status.FindConnectorStatuses(ctx, poller.connectClient)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -77,22 +79,23 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 			}
 
 			logger.Debug("connector statuses retrieved", "count", len(connectorStatuses))
+			pruneBackoffsForMissingStatuses(&poller.backoffFilter, connectorStatuses)
 			resetBackoffsForHealthyStatuses(&poller.backoffFilter, connectorStatuses)
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, configuration.PollingBehavior.RestartFailedTasks, logger)
 			if poller.backoffFilter.BackoffConfig.Enabled {
 				connectorRemediationActions = FilterByBackoffs(poller.backoffFilter, connectorRemediationActions, logger)
 			}
-			attempts := 0
+			restartAttempts := 0
 			for _, remediationAction := range connectorRemediationActions {
 				if ctx.Err() != nil {
 					return
 				}
-				result, err := actions.TakeAction(ctx, remediationAction, poller.connect, logger)
+				result, err := actions.TakeAction(ctx, remediationAction, poller.connectClient, logger)
 				if err != nil && ctx.Err() == nil {
-					remediationAction.Logger(logger).Error("remediation request failed", "request_made", result.RequestMade, "status_code", result.StatusCode, "error", err)
+					remediationAction.Logger(logger).Error("remediation request failed", "request_attempted", result.RequestAttempted, "status_code", result.StatusCode, "error", err)
 				}
-				if result.RequestMade {
-					attempts++
+				if result.RequestAttempted {
+					restartAttempts++
 					switch remediationAction.Kind {
 					case actions.RestartConnector:
 						poller.backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, nil)
@@ -103,7 +106,7 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 					}
 				}
 			}
-			logger.Debug("poll cycle completed", "connector_count", len(connectorStatuses), "restart_attempts", attempts, "duration", time.Since(cycleStarted))
+			logger.Debug("poll cycle completed", "connector_count", len(connectorStatuses), "restart_attempts", restartAttempts, "duration", time.Since(cycleStarted))
 		}
 	}
 }
@@ -120,7 +123,24 @@ func logPollingSettings(logger *slog.Logger, message string, configuration confi
 	)
 }
 
-func resetBackoffsForHealthyStatuses(backoffFilter *backoff.BackoffFilter, connectorStatuses map[string]status.ConnectorStatus) {
+// Call only after successfully retrieving a complete status snapshot.
+func pruneBackoffsForMissingStatuses(backoffFilter *backoff.Filter, connectorStatuses map[string]status.ConnectorStatus) {
+	if len(backoffFilter.BackoffStatuses) == 0 {
+		return
+	}
+	missingStatuses := maps.Clone(backoffFilter.BackoffStatuses)
+	for _, connectorStatus := range connectorStatuses {
+		delete(missingStatuses, connectorStatus.Name)
+		for _, taskStatus := range connectorStatus.Tasks {
+			delete(missingStatuses, fmt.Sprintf(backoff.TaskKeyFormat, connectorStatus.Name, taskStatus.ID))
+		}
+	}
+	for key := range missingStatuses {
+		delete(backoffFilter.BackoffStatuses, key)
+	}
+}
+
+func resetBackoffsForHealthyStatuses(backoffFilter *backoff.Filter, connectorStatuses map[string]status.ConnectorStatus) {
 	for _, connectorStatus := range connectorStatuses {
 		if strings.EqualFold(connectorStatus.Connector.State, "RUNNING") {
 			backoffFilter.ResetBackoffStatus(connectorStatus.Name, nil)
@@ -134,7 +154,7 @@ func resetBackoffsForHealthyStatuses(backoffFilter *backoff.BackoffFilter, conne
 	}
 }
 
-func FilterByBackoffs(backoffFilter backoff.BackoffFilter, originalActions []actions.RemediationAction, logger *slog.Logger) []actions.RemediationAction {
+func FilterByBackoffs(backoffFilter backoff.Filter, originalActions []actions.RemediationAction, logger *slog.Logger) []actions.RemediationAction {
 	var filteredActions []actions.RemediationAction
 	for _, action := range originalActions {
 		switch action.Kind {

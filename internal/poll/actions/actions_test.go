@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"entropicworks.com/kafka-connect-healer/internal/connectcluster"
+	"entropicworks.com/kafka-connect-healer/internal/poll/requests"
 	"entropicworks.com/kafka-connect-healer/internal/poll/status"
-	"entropicworks.com/kafka-connect-healer/internal/poll/utils/requests"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -41,7 +41,7 @@ func TestTakeActionRejectsRedirectAndRecordsAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connect := requests.NewConnectAPI(connectcluster.ConnectClusterAPIConfiguration{
+	connect := requests.NewConnectAPI(connectcluster.Configuration{
 		Host: serverURL.Hostname(), Port: serverURL.Port(),
 	}, time.Second)
 	result, err := TakeAction(context.Background(), RemediationAction{
@@ -50,7 +50,7 @@ func TestTakeActionRejectsRedirectAndRecordsAttempt(t *testing.T) {
 	if err == nil {
 		t.Fatal("redirected remediation request was reported as accepted")
 	}
-	if result.StatusCode != http.StatusFound || !result.RequestMade || result.AttemptedAt.IsZero() {
+	if result.StatusCode != http.StatusFound || !result.RequestAttempted || result.AttemptedAt.IsZero() {
 		t.Fatalf("result = %#v, want the original 302 and a recorded attempt", result)
 	}
 	if loginRequests.Load() != 0 {
@@ -270,23 +270,23 @@ func TestTakeAction(t *testing.T) {
 				t.Fatalf("TakeAction() error = %v, want error = %t", err, test.wantError)
 			}
 
-			expectedRequestMade := len(test.expectedRequests) > 0
-			if result.RequestMade != expectedRequestMade {
-				t.Fatalf("TakeAction() RequestMade = %t, want %t", result.RequestMade, expectedRequestMade)
+			expectedRequestAttempted := len(test.expectedRequests) > 0
+			if result.RequestAttempted != expectedRequestAttempted {
+				t.Fatalf("TakeAction() RequestAttempted = %t, want %t", result.RequestAttempted, expectedRequestAttempted)
 			}
 
 			expectedStatusCode := 0
-			if expectedRequestMade {
+			if expectedRequestAttempted {
 				expectedStatusCode = test.expectedRequests[0].statusCode
 			}
 			if result.StatusCode != expectedStatusCode {
 				t.Fatalf("TakeAction() StatusCode = %d, want %d", result.StatusCode, expectedStatusCode)
 			}
 
-			if expectedRequestMade && result.AttemptedAt.IsZero() {
+			if expectedRequestAttempted && result.AttemptedAt.IsZero() {
 				t.Fatal("TakeAction() AttemptedAt is zero after making a request")
 			}
-			if !expectedRequestMade && !result.AttemptedAt.IsZero() {
+			if !expectedRequestAttempted && !result.AttemptedAt.IsZero() {
 				t.Fatalf("TakeAction() AttemptedAt = %v, want zero time", result.AttemptedAt)
 			}
 			if requestIndex != len(test.expectedRequests) {
@@ -315,8 +315,8 @@ func TestTakeActionRecordsFailedRequest(t *testing.T) {
 	if err == nil {
 		t.Fatal("TakeAction() error = nil, want an error")
 	}
-	if !result.RequestMade {
-		t.Fatal("TakeAction() RequestMade = false, want true")
+	if !result.RequestAttempted {
+		t.Fatal("TakeAction() RequestAttempted = false, want true")
 	}
 	if result.AttemptedAt.IsZero() {
 		t.Fatal("TakeAction() AttemptedAt is zero after making a request")

@@ -205,7 +205,7 @@ func TestDeleteClusterCancelsInFlightStatusRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(manager.Close)
-	if _, err := manager.PutCluster("production", connectcluster.ConnectClusterAPIConfiguration{
+	if _, err := manager.PutCluster("production", connectcluster.Configuration{
 		Host: serverURL.Hostname(), Port: serverURL.Port(),
 	}); err != nil {
 		t.Fatal(err)
@@ -247,7 +247,7 @@ func TestClusterManagerCloseStopsWorkersAndRejectsChanges(t *testing.T) {
 
 func TestNewClusterManagerRejectsInvalidInitialDefinitionsAndCanceledContext(t *testing.T) {
 	configurationManager := config.NewManager(config.DefaultConfiguration())
-	for _, definitions := range []map[string]connectcluster.ConnectClusterAPIConfiguration{
+	for _, definitions := range []map[string]connectcluster.Configuration{
 		{" ": connectcluster.DefaultConfiguration()},
 		{"valid": connectcluster.DefaultConfiguration(), "invalid": {Host: "localhost", Port: "0"}},
 	} {

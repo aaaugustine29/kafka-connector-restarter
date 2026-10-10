@@ -41,7 +41,7 @@ func TestConnectAPIReusesClientAfterTimeoutChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connect := NewConnectAPI(connectcluster.ConnectClusterAPIConfiguration{
+	connect := NewConnectAPI(connectcluster.Configuration{
 		Host: serverURL.Hostname(), Port: serverURL.Port(),
 	}, time.Second)
 	client := connect.HTTPClient
@@ -72,27 +72,27 @@ func TestConnectAPIReusesClientAfterTimeoutChange(t *testing.T) {
 func TestNewConnectAPIBuildsBaseURL(t *testing.T) {
 	tests := []struct {
 		name          string
-		configuration connectcluster.ConnectClusterAPIConfiguration
+		configuration connectcluster.Configuration
 		wantURL       string
 	}{
 		{
 			name:          "HTTP",
-			configuration: connectcluster.ConnectClusterAPIConfiguration{Host: "localhost", Port: "8083"},
+			configuration: connectcluster.Configuration{Host: "localhost", Port: "8083"},
 			wantURL:       "http://localhost:8083",
 		},
 		{
 			name:          "HTTPS",
-			configuration: connectcluster.ConnectClusterAPIConfiguration{Host: "connect.example.test", Port: "8443", HTTPS: true},
+			configuration: connectcluster.Configuration{Host: "connect.example.test", Port: "8443", HTTPS: true},
 			wantURL:       "https://connect.example.test:8443",
 		},
 		{
 			name:          "IPv6",
-			configuration: connectcluster.ConnectClusterAPIConfiguration{Host: "2001:db8::1", Port: "8083"},
+			configuration: connectcluster.Configuration{Host: "2001:db8::1", Port: "8083"},
 			wantURL:       "http://[2001:db8::1]:8083",
 		},
 		{
 			name:          "scoped IPv6",
-			configuration: connectcluster.ConnectClusterAPIConfiguration{Host: "fe80::1%eth0", Port: "8083"},
+			configuration: connectcluster.Configuration{Host: "fe80::1%eth0", Port: "8083"},
 			wantURL:       "http://[fe80::1%25eth0]:8083",
 		},
 	}
@@ -127,7 +127,7 @@ func TestConnectAPIDoesNotFollowRedirects(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				connect := NewConnectAPI(connectcluster.ConnectClusterAPIConfiguration{
+				connect := NewConnectAPI(connectcluster.Configuration{
 					Host: serverURL.Hostname(), Port: serverURL.Port(),
 				}, 2*time.Second)
 				if connect.HTTPClient.Timeout != 2*time.Second {

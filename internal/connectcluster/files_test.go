@@ -77,7 +77,7 @@ func TestLoadFilesWithoutBaseUsesDefaultCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]ConnectClusterAPIConfiguration{"default": DefaultConfiguration()}
+	want := map[string]Configuration{"default": DefaultConfiguration()}
 	if !maps.Equal(got, want) {
 		t.Fatalf("clusters = %#v, want %#v", got, want)
 	}
@@ -91,7 +91,7 @@ func TestLoadFilesOverlayWithoutBase(t *testing.T) {
 	}
 	defaultCluster := DefaultConfiguration()
 	defaultCluster.Host = "connect.local"
-	want := map[string]ConnectClusterAPIConfiguration{
+	want := map[string]Configuration{
 		"default": defaultCluster,
 		"staging": DefaultConfiguration(),
 	}
@@ -121,7 +121,7 @@ production:
 	if err != nil {
 		t.Fatalf("LoadFiles() error = %v", err)
 	}
-	want := map[string]ConnectClusterAPIConfiguration{
+	want := map[string]Configuration{
 		"production": {
 			Host: "connect.production.svc", Port: "8443", HTTPS: true,
 			AuthConfig: AuthConfiguration{Enabled: true, Username: "secret-user", Password: "secret-password"},
@@ -141,7 +141,7 @@ func TestLoadFilesClusterMembershipAndEmptyMappings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]ConnectClusterAPIConfiguration{"production": DefaultConfiguration(), "staging": DefaultConfiguration()}
+	want := map[string]Configuration{"production": DefaultConfiguration(), "staging": DefaultConfiguration()}
 	production := want["production"]
 	production.Host = "connect.production"
 	want["production"] = production

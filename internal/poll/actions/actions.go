@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"entropicworks.com/kafka-connect-healer/internal/poll/requests"
 	"entropicworks.com/kafka-connect-healer/internal/poll/status"
-	"entropicworks.com/kafka-connect-healer/internal/poll/utils/requests"
 )
 
 type RemediationAction struct {
@@ -28,9 +28,9 @@ func (action RemediationAction) Logger(parent *slog.Logger) *slog.Logger {
 }
 
 type RemediationActionResult struct {
-	RequestMade bool
-	AttemptedAt time.Time
-	StatusCode  int
+	RequestAttempted bool
+	AttemptedAt      time.Time
+	StatusCode       int
 }
 
 type ActionKind string
@@ -46,41 +46,41 @@ const (
 )
 
 func DetermineActionsForConnector(
-	status status.ConnectorStatus,
+	connectorStatus status.ConnectorStatus,
 	restartTasks bool,
 	logger *slog.Logger,
 ) []RemediationAction {
 	var actions []RemediationAction
-	if strings.EqualFold(status.Connector.State, "RUNNING") {
+	if strings.EqualFold(connectorStatus.Connector.State, "RUNNING") {
 		if restartTasks {
-			for _, task := range status.Tasks {
+			for _, task := range connectorStatus.Tasks {
 				if strings.EqualFold(task.State, "FAILED") {
 					actions = append(actions, RemediationAction{
-						ConnectorName: status.Name,
+						ConnectorName: connectorStatus.Name,
 						Kind:          RestartTask,
 						TaskID:        task.ID,
 					})
-					logger.Debug("failed task detected", "connector", status.Name, "task_id", task.ID)
+					logger.Debug("failed task detected", "connector", connectorStatus.Name, "task_id", task.ID)
 				}
 			}
 		}
-	} else if strings.EqualFold(status.Connector.State, "FAILED") {
+	} else if strings.EqualFold(connectorStatus.Connector.State, "FAILED") {
 		actions = append(actions, RemediationAction{
-			ConnectorName: status.Name,
+			ConnectorName: connectorStatus.Name,
 			Kind:          RestartConnector,
 			TaskID:        0,
 		})
-		logger.Debug("failed connector detected", "connector", status.Name)
+		logger.Debug("failed connector detected", "connector", connectorStatus.Name)
 	} else {
-		logger.Debug("connector is not eligible for remediation", "connector", status.Name, "state", status.Connector.State)
+		logger.Debug("connector is not eligible for remediation", "connector", connectorStatus.Name, "state", connectorStatus.Connector.State)
 	}
 	return actions
 }
 
 func GenerateActionsFromStatuses(statuses map[string]status.ConnectorStatus, restartTasks bool, logger *slog.Logger) []RemediationAction {
 	var connectorActions []RemediationAction
-	for _, status := range statuses {
-		connectorActions = append(connectorActions, DetermineActionsForConnector(status, restartTasks, logger)...)
+	for _, connectorStatus := range statuses {
+		connectorActions = append(connectorActions, DetermineActionsForConnector(connectorStatus, restartTasks, logger)...)
 	}
 	return connectorActions
 }
@@ -101,7 +101,7 @@ func TakeAction(ctx context.Context, remediationAction RemediationAction, connec
 	requestURL, err := generateRemediationActionURL(connect, remediationAction)
 	if err != nil {
 		return RemediationActionResult{
-			RequestMade: false,
+			RequestAttempted: false,
 		}, err
 	}
 
@@ -126,11 +126,11 @@ func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, request
 	)
 
 	if err != nil {
-		result.RequestMade = false
+		result.RequestAttempted = false
 		return result, fmt.Errorf("create remediation request for %q: %w", requestURL, err)
 	}
 
-	result.RequestMade = true
+	result.RequestAttempted = true
 	result.AttemptedAt = time.Now()
 	response, err := connect.HTTPClient.Do(request)
 
