@@ -4,7 +4,7 @@ Polls the REST APIs of named Kafka Connect clusters and restarts failed connecto
 
 ## Run
 
-Requires Go 1.27.1 or later. Run with all default values:
+Requires Go 1.27.2 or later. Run with all default values:
 
 ```sh
 go run ./cmd/kafka-connect-healer
