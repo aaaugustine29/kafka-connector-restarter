@@ -23,11 +23,7 @@ Run with all default values:
 go run ./cmd/kafka-connect-healer
 ```
 
-Build the application binary:
-
-```sh
-go build -o bin/kafka-connect-healer ./cmd/kafka-connect-healer
-```
+For a standalone binary without Docker, see [Build from source](#build-from-source).
 
 The Go module path is `github.com/Entropic-Works/kafka-connect-healer`. Application packages remain under `internal/`; this project is a service, not a public Go library.
 
@@ -54,6 +50,60 @@ Both base files and each Secret overlay are optional, but any explicitly supplie
 The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available routes, `GET /config` returns application settings without the API password, and `GET /clusters` returns cluster definitions without passwords. Optional API authentication protects all routes. An API startup or serving failure is logged as an error while polling continues. On SIGINT or SIGTERM, polling requests are canceled and the API has up to five seconds to finish active requests before its connections are closed. API logs include `component=api` and the listening address. Shutdown logs report the grace period, completion duration, and any failure or forced connection closure; the listener stopping is logged separately at DEBUG while active requests may still be finishing.
 
 API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. All polling, restart, and backoff logs include `connect_cluster` and `endpoint`; action logs also identify the connector and, for task restarts, `task_id`. Startup logs report the configured cluster count and source, and each poller logs its effective settings, changes, and shutdown at INFO. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection, backoff skips, and poll-cycle counts and durations are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Authentication credentials are omitted. Normal shutdown cancellation does not generate polling failure logs.
+
+## Build from source
+
+Docker and the published image are optional. You can review the source, build it
+with your organization's approved Go toolchain, and run the binary directly or
+package it in your own internal image.
+
+Clone the repository as shown above and check out the release tag or commit you
+have reviewed. Use Go 1.27.2 or later, as required by `go.mod`. For consistent builds,
+use the same Go version across your build machines.
+
+Build for the current machine (commands below use a POSIX shell):
+
+```sh
+CGO_ENABLED=0 GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off \
+  go build -mod=vendor -trimpath -o bin/kafka-connect-healer ./cmd/kafka-connect-healer
+```
+
+Dependencies are included in `vendor/`; this command does not download modules or
+a Go toolchain. For an offline build, first make the source tree (including `vendor/`)
+and the required Go toolchain available in your build environment. No C compiler is
+required. `GOTOOLCHAIN=local` makes the build fail if the installed Go version is too
+old rather than automatically downloading a newer one.
+
+Run the binary with the example configuration:
+
+```sh
+./bin/kafka-connect-healer \
+  --config=examples/application.yaml \
+  --connect-clusters=examples/connect-clusters.yaml
+```
+
+The cluster example points to `localhost:8083`; change it for your environment, or
+use `examples/empty-clusters.yaml` to explore the API without polling. The example
+disables API authentication, and the API listens on all interfaces. Restrict network
+access and configure authentication before exposing it.
+
+To cross-compile a Linux amd64 binary, even from macOS:
+
+```sh
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off \
+  go build -mod=vendor -trimpath -o bin/kafka-connect-healer-linux-amd64 ./cmd/kafka-connect-healer
+```
+
+Use `GOARCH=arm64` and a corresponding output filename for Linux arm64. The Linux
+binary is statically linked and does not need Go installed at runtime. HTTPS requests
+still require trusted CA certificates on the target system; include your organization's
+trusted certificates when using an internal image. Run as an unprivileged user and
+make configuration files readable by that user. Secret overlay flags work the same
+way as when using `go run` or Docker.
+
+For internal redistribution, include `LICENSE`, `NOTICE`, and applicable third-party
+license notices alongside your binary or image. Keep the reviewed source revision
+and Go version in your build records. See [Tests](#tests) for pre-deployment checks.
 
 ## Docker
 
@@ -288,7 +338,7 @@ version tag is published (`v0.1.0`, or a prerelease such as `v0.1.0-rc.1`); no f
 
 Before the first release, maintainers must:
 
-1. Set GitHub Actions repository variable `DOCKERHUB_USERNAME` to the Docker account
+1. Set GitHub Actions repository secret `DOCKERHUB_USERNAME` to the Docker account
    used for publishing, and repository secret `DOCKERHUB_TOKEN` to an access token
    with write access to the Docker Hub repository. Do not use the account password
    or commit the token. Make the Docker Hub repository public for a public release.
