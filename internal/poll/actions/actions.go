@@ -107,19 +107,11 @@ func TakeAction(ctx context.Context, remediationAction RemediationAction, connec
 
 	logger = remediationAction.Logger(logger)
 	requestMessage := "requesting connector restart"
-	acceptedMessage := "connector restart request accepted"
 	if remediationAction.Kind == RestartTask {
 		requestMessage = "requesting task restart"
-		acceptedMessage = "task restart request accepted"
 	}
 	logger.Info(requestMessage)
-	result, err := makeActionRequest(ctx, connect, requestURL)
-	if err != nil {
-		return result, err
-	}
-
-	logger.Info(acceptedMessage, "status_code", result.StatusCode)
-	return result, nil
+	return makeActionRequest(ctx, connect, requestURL)
 }
 
 func makeActionRequest(ctx context.Context, connect requests.ConnectAPI, requestURL string) (RemediationActionResult, error) {

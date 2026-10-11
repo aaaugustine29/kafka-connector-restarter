@@ -546,6 +546,7 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 			Attempts    int       `json:"attempt_count"`
 			AttemptedAt time.Time `json:"attempted_at"`
 			StatusCode  int       `json:"status_code"`
+			Duration    int64     `json:"duration"`
 		}
 		if err := json.Unmarshal(value, &record); err != nil {
 			t.Fatal(err)
@@ -557,12 +558,12 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 		if record.Action != "" && (record.Action != string(actions.RestartConnector) || record.Connector != "shared-connector" || record.TaskID != nil) {
 			t.Fatalf("log lost its action identity: %s", value)
 		}
-		if record.Message == "restart attempt recorded" {
+		if record.Message == "connector restart request accepted" || record.Message == "remediation request failed" {
 			wantStatus := http.StatusNoContent
 			if record.Cluster == "staging" {
 				wantStatus = http.StatusInternalServerError
 			}
-			if record.Attempts != 1 || record.AttemptedAt.IsZero() || record.StatusCode != wantStatus || record.Action == "" {
+			if record.Attempts != 1 || record.AttemptedAt.IsZero() || record.StatusCode != wantStatus || record.Action == "" || record.Duration <= 0 {
 				t.Fatalf("attempt log lost its outcome: %s", value)
 			}
 		}
@@ -571,7 +572,7 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 	for name, clusterMessages := range messages {
 		for _, message := range []string{
 			"polling started", "polling settings updated", "polling stopped",
-			"remediation action determined", "remediation actions determined", "requesting connector restart", "restart attempt recorded",
+			"remediation action determined", "remediation actions determined", "requesting connector restart",
 			"connector restart skipped because it is in the backoff window", "poll cycle completed",
 		} {
 			if !clusterMessages[message] {

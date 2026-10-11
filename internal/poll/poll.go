@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/http"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 
 	ticker := time.NewTicker(configuration.PollingBehavior.Interval.Duration())
 	defer ticker.Stop()
+	failedTargets := make(map[actions.RemediationAction]struct{})
 
 	for {
 		select {
@@ -79,6 +81,7 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 			}
 
 			logger.Debug("connector statuses retrieved", "count", len(connectorStatuses))
+			failedTargets = logRecoveries(failedTargets, connectorStatuses, logger)
 			pruneBackoffsForMissingStatuses(&poller.backoffFilter, connectorStatuses)
 			resetBackoffsForHealthyStatuses(&poller.backoffFilter, connectorStatuses)
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, configuration.PollingBehavior.RestartFailedTasks, logger)
@@ -91,10 +94,11 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 				if ctx.Err() != nil {
 					return
 				}
+				actionStarted := time.Now()
 				result, err := actions.TakeAction(ctx, remediationAction, poller.connectClient, logger)
-				if err != nil && ctx.Err() == nil {
-					remediationAction.Logger(logger).Error("remediation request failed", "request_attempted", result.RequestAttempted, "status_code", result.StatusCode, "error", err)
-				}
+				requestDuration := time.Since(actionStarted)
+				outcomeLogger := remediationAction.Logger(logger).With("request_attempted", result.RequestAttempted,
+					"status_code", result.StatusCode, "duration", requestDuration)
 				if result.RequestAttempted {
 					restartAttempts++
 					var backoffStatus backoff.Status
@@ -106,13 +110,51 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 					default:
 						remediationAction.Logger(logger).Error("unsupported remediation action")
 					}
-					remediationAction.Logger(logger).Info("restart attempt recorded", "attempt_count", backoffStatus.Attempts,
-						"attempted_at", result.AttemptedAt, "status_code", result.StatusCode)
+					outcomeLogger = outcomeLogger.With("attempt_count", backoffStatus.Attempts, "attempted_at", result.AttemptedAt)
+				}
+				switch {
+				case ctx.Err() != nil && err != nil:
+					outcomeLogger.Debug("restart request canceled", "error", err)
+				case err != nil && result.StatusCode == http.StatusConflict:
+					outcomeLogger.Warn("remediation request conflicted", "error", err)
+				case err != nil:
+					outcomeLogger.Error("remediation request failed", "error", err)
+				case remediationAction.Kind == actions.RestartTask:
+					outcomeLogger.Info("task restart request accepted")
+				default:
+					outcomeLogger.Info("connector restart request accepted")
 				}
 			}
 			logger.Debug("poll cycle completed", "connector_count", len(connectorStatuses), "restart_attempts", restartAttempts, "duration", time.Since(cycleStarted))
 		}
 	}
+}
+
+// Track observed failures independently of restart attempts. Missing targets are
+// forgotten; fetch errors never call this function or change recovery history.
+func logRecoveries(previousFailures map[actions.RemediationAction]struct{}, statuses map[string]status.ConnectorStatus, logger *slog.Logger) map[actions.RemediationAction]struct{} {
+	nextFailures := make(map[actions.RemediationAction]struct{}, len(previousFailures))
+	observe := func(action actions.RemediationAction, state string) {
+		_, wasFailed := previousFailures[action]
+		if strings.EqualFold(state, "RUNNING") {
+			if wasFailed {
+				message := "connector recovered"
+				if action.Kind == actions.RestartTask {
+					message = "task recovered"
+				}
+				action.Logger(logger).Info(message)
+			}
+		} else if wasFailed || strings.EqualFold(state, "FAILED") {
+			nextFailures[action] = struct{}{}
+		}
+	}
+	for _, connector := range statuses {
+		observe(actions.RemediationAction{ConnectorName: connector.Name, Kind: actions.RestartConnector}, connector.Connector.State)
+		for _, task := range connector.Tasks {
+			observe(actions.RemediationAction{ConnectorName: connector.Name, Kind: actions.RestartTask, TaskID: task.ID}, task.State)
+		}
+	}
+	return nextFailures
 }
 
 func logPollingSettings(logger *slog.Logger, message string, configuration config.ApplicationConfiguration) {

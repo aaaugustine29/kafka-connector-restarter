@@ -34,8 +34,12 @@ for fault in 401 409 500 redirect disconnect; do
   if [[ "$fault" == redirect ]]; then
     [[ "$(kube exec deployment/connect -- awk '$3 == "/redirect-target" { n++ } END { print n+0 }' /data/proxy-requests)" == 0 ]]
   fi
-  kube logs deployment/healer --container healer --tail=90 | grep 'restart attempt recorded.*attempt_count=4' >/dev/null
-  kube logs deployment/healer --container healer --tail=90 | grep 'remediation request failed' >/dev/null
+  kube logs deployment/healer --container healer --tail=90 | grep -E 'remediation request (failed|conflicted).*attempt_count=4' >/dev/null
+  if [[ "$fault" == 409 ]]; then
+    kube logs deployment/healer --container healer --tail=90 | grep 'level=WARN msg="remediation request conflicted"' >/dev/null
+  else
+    kube logs deployment/healer --container healer --tail=90 | grep 'level=ERROR msg="remediation request failed"' >/dev/null
+  fi
   kube exec deployment/connect -- rm /data/task/fail-task
   mode pass
   wait_status task RUNNING RUNNING
@@ -126,11 +130,11 @@ echo 'PASS: same-named connectors have independent cluster state; a slow cluster
 
 # Verify identities on interleaved logs, not just that a message exists somewhere.
 kube logs deployment/healer --container healer | awk '
-  /msg="(remediation action determined|requesting (connector|task) restart|(connector|task) restart request accepted|restart attempt recorded|remediation request failed|(connector|task) restart skipped because it is in the backoff window)"/ {
+  /msg="(remediation action determined|requesting (connector|task) restart|(connector|task) restart request accepted|remediation request (failed|conflicted)|(connector|task) recovered|(connector|task) restart skipped because it is in the backoff window)"/ {
     if ($0 !~ /connect_cluster=/ || $0 !~ /endpoint=/ || $0 !~ /connector=/ || $0 !~ /action=restart_(connector|task)/) exit 1
     if ($0 ~ /action=restart_task/ && $0 !~ /task_id=[0-9]+/) exit 1
     if ($0 ~ /action=restart_connector/ && $0 ~ /task_id=/) exit 1
-    if ($0 ~ /msg="restart attempt recorded"/ && ($0 !~ /attempt_count=[1-9][0-9]*/ || $0 !~ /attempted_at=/ || $0 !~ /status_code=/)) exit 1
+    if ($0 ~ /msg="((connector|task) restart request accepted|remediation request (failed|conflicted))"/ && ($0 !~ /attempt_count=[1-9][0-9]*/ || $0 !~ /attempted_at=/ || $0 !~ /status_code=/ || $0 !~ /duration=/)) exit 1
     if ($0 ~ /connect_cluster=test .*connector=task/) primary++
     if ($0 ~ /connect_cluster=secondary .*connector=task/) secondary++
     records++

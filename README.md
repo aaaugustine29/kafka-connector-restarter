@@ -52,12 +52,20 @@ The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available
 API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. All polling, restart, and backoff logs include `connect_cluster` and `endpoint`; action logs also identify the connector and, for task restarts, `task_id`. Startup logs report the configured cluster count and source, and each poller logs its effective settings, changes, and shutdown at INFO. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection, backoff skips, and poll-cycle counts and durations are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Authentication credentials are omitted. Normal shutdown cancellation does not generate polling failure logs.
 
 Each action event includes `action=restart_connector` or `action=restart_task`.
-The INFO `restart attempt recorded` event also includes `attempt_count`,
-`attempted_at`, and `status_code`, including unsuccessful requests. A status code
+Each request has a start event and a single outcome event. Accepted outcomes are
+INFO, HTTP 409 conflicts are WARN, and other failures are ERROR. Outcome events
+include `duration`, `request_attempted`, and `status_code`; attempted requests
+also include `attempt_count` and `attempted_at`, including unsuccessful requests. A status code
 of `0` means no HTTP response was received. Connector restart events omit
 `task_id`; they do not invent a task ID of zero. DEBUG determination and backoff
 events retain the same action identity, so concurrent cluster logs can be traced
 without relying on their ordering.
+
+INFO `connector recovered` and `task recovered` events are emitted once when a
+previously observed failing target returns to RUNNING, even if Healer did not
+restart it. Recovery history survives status-fetch errors, but deleted targets
+are forgotten. These events report observed recovery, not its cause. Normal
+shutdown request cancellation is DEBUG rather than a failure.
 
 ## Build from source
 

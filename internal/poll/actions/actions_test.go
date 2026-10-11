@@ -45,26 +45,19 @@ func TestTakeActionLogsRestartRequests(t *testing.T) {
 				t.Fatalf("error = %v", err)
 			}
 			lines := strings.Split(strings.TrimSpace(output.String()), "\n")
-			wantLines := 2
-			if test.statusCode >= 300 {
-				wantLines = 1
-			}
-			if len(lines) != wantLines {
+			if len(lines) != 1 {
 				t.Fatalf("logs = %s", output.String())
 			}
 			kind := "connector"
 			if test.kind == RestartTask {
 				kind = "task"
 			}
-			for index, line := range lines {
+			for _, line := range lines {
 				var entry map[string]any
 				if err := json.Unmarshal([]byte(line), &entry); err != nil {
 					t.Fatal(err)
 				}
 				wantMessage := "requesting " + kind + " restart"
-				if index == 1 {
-					wantMessage = kind + " restart request accepted"
-				}
 				if entry["level"] != "INFO" || entry["msg"] != wantMessage || entry["connector"] != "test-connector" || entry["connect_cluster"] != "test-cluster" || entry["endpoint"] != server.URL || entry["action"] != string(test.kind) {
 					t.Fatalf("log entry = %v", entry)
 				}
