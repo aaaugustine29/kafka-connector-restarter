@@ -60,7 +60,7 @@ func DetermineActionsForConnector(
 						Kind:          RestartTask,
 						TaskID:        task.ID,
 					})
-					logger.Debug("failed task detected", "connector", connectorStatus.Name, "task_id", task.ID)
+					actions[len(actions)-1].Logger(logger).Debug("remediation action determined")
 				}
 			}
 		}
@@ -70,7 +70,7 @@ func DetermineActionsForConnector(
 			Kind:          RestartConnector,
 			TaskID:        0,
 		})
-		logger.Debug("failed connector detected", "connector", connectorStatus.Name)
+		actions[len(actions)-1].Logger(logger).Debug("remediation action determined")
 	} else {
 		logger.Debug("connector is not eligible for remediation", "connector", connectorStatus.Name, "state", connectorStatus.Connector.State)
 	}
@@ -106,13 +106,19 @@ func TakeAction(ctx context.Context, remediationAction RemediationAction, connec
 	}
 
 	logger = remediationAction.Logger(logger)
-	logger.Info("sending remediation request")
+	requestMessage := "requesting connector restart"
+	acceptedMessage := "connector restart request accepted"
+	if remediationAction.Kind == RestartTask {
+		requestMessage = "requesting task restart"
+		acceptedMessage = "task restart request accepted"
+	}
+	logger.Info(requestMessage)
 	result, err := makeActionRequest(ctx, connect, requestURL)
 	if err != nil {
 		return result, err
 	}
 
-	logger.Info("remediation request accepted", "status_code", result.StatusCode)
+	logger.Info(acceptedMessage, "status_code", result.StatusCode)
 	return result, nil
 }
 

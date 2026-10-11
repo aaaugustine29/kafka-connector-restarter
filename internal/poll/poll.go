@@ -82,6 +82,7 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 			pruneBackoffsForMissingStatuses(&poller.backoffFilter, connectorStatuses)
 			resetBackoffsForHealthyStatuses(&poller.backoffFilter, connectorStatuses)
 			connectorRemediationActions := actions.GenerateActionsFromStatuses(connectorStatuses, configuration.PollingBehavior.RestartFailedTasks, logger)
+			logger.Debug("remediation actions determined", "action_count", len(connectorRemediationActions))
 			if poller.backoffFilter.BackoffConfig.Enabled {
 				connectorRemediationActions = FilterByBackoffs(poller.backoffFilter, connectorRemediationActions, logger)
 			}
@@ -96,14 +97,17 @@ func (poller *ConnectClusterPoller) Poll(ctx context.Context, configurationManag
 				}
 				if result.RequestAttempted {
 					restartAttempts++
+					var backoffStatus backoff.Status
 					switch remediationAction.Kind {
 					case actions.RestartConnector:
-						poller.backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, nil)
+						backoffStatus = poller.backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, nil)
 					case actions.RestartTask:
-						poller.backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, &remediationAction.TaskID)
+						backoffStatus = poller.backoffFilter.UpdateBackoffStatus(result.AttemptedAt, remediationAction.ConnectorName, &remediationAction.TaskID)
 					default:
 						remediationAction.Logger(logger).Error("unsupported remediation action")
 					}
+					remediationAction.Logger(logger).Info("restart attempt recorded", "attempt_count", backoffStatus.Attempts,
+						"attempted_at", result.AttemptedAt, "status_code", result.StatusCode)
 				}
 			}
 			logger.Debug("poll cycle completed", "connector_count", len(connectorStatuses), "restart_attempts", restartAttempts, "duration", time.Since(cycleStarted))

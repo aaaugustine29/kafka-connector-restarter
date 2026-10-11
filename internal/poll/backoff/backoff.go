@@ -19,12 +19,13 @@ type Filter struct {
 	BackoffStatuses map[string]Status
 }
 
-func (backoffFilter *Filter) UpdateBackoffStatus(attemptTime time.Time, connectorName string, taskID *int) {
+func (backoffFilter *Filter) UpdateBackoffStatus(attemptTime time.Time, connectorName string, taskID *int) Status {
 	key := getKey(connectorName, taskID)
 	status := backoffFilter.BackoffStatuses[key]
 	status.LastAttemptTime = attemptTime
 	status.Attempts++
 	backoffFilter.BackoffStatuses[key] = status
+	return status
 }
 
 func (backoffFilter *Filter) ResetBackoffStatus(connectorName string, taskID *int) {

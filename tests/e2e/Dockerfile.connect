@@ -1,0 +1,24 @@
+# This image and its baked-in credentials/certificate are local test fixtures only.
+FROM apache/kafka:4.2.2 AS kafka
+FROM eclipse-temurin:21-jdk-alpine AS compile
+COPY --from=kafka /opt/kafka/libs/ /kafka-libs/
+COPY HealerTestConnector.java /src/HealerTestConnector.java
+COPY FaultProxy.java /src/FaultProxy.java
+RUN mkdir -p /classes && javac -proc:none -cp '/kafka-libs/*' -d /classes /src/*.java \
+    && jar --create --file /healer-test.jar -C /classes .
+
+FROM apache/kafka:4.2.2
+USER root
+COPY --from=compile /healer-test.jar /opt/kafka/plugins/healer-test/healer-test.jar
+RUN mkdir -p /opt/kafka/e2e-tls \
+    && keytool -genkeypair -alias connect -keyalg RSA -keysize 2048 -validity 30 \
+       -keystore /opt/kafka/e2e-tls/connect.p12 -storetype PKCS12 \
+       -storepass test-only-password -keypass test-only-password \
+       -dname 'CN=connect' -ext 'SAN=dns:connect,dns:connect-secondary,dns:localhost,ip:127.0.0.1' \
+    && keytool -exportcert -rfc -alias connect \
+       -keystore /opt/kafka/e2e-tls/connect.p12 -storepass test-only-password \
+       -file /opt/kafka/e2e-tls/ca.crt \
+    && chown -R 1000:1000 /opt/kafka/e2e-tls
+USER 1000:1000
+ENTRYPOINT ["/opt/kafka/bin/connect-distributed.sh"]
+CMD ["/config/worker.properties"]

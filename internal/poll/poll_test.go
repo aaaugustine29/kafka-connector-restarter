@@ -400,6 +400,10 @@ func TestPollRemediationAndBackoffLifecycle(t *testing.T) {
 	checkCycle("failures after retrieval error remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
 	checkCycle("malformed status response does not reset backoff", statusResponse{http.StatusOK, "{"}, nil)
 	checkCycle("failures after decoding error remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
+	checkCycle("null status response does not reset backoff", statusResponse{http.StatusOK, "null"}, nil)
+	checkCycle("failures after null response remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
+	checkCycle("missing status does not reset backoff", statusResponse{http.StatusOK, `{"connector":{}}`}, nil)
+	checkCycle("failures after missing status remain in backoff", statusResponse{http.StatusOK, failedStatuses}, nil)
 	checkCycle("deleted task clears task backoff", statusResponse{http.StatusOK, `{
 		"connector-a": {"status": {"name": "connector-a", "connector": {"state": "FAILED"}, "tasks": []}},
 		"connector-b": {"status": {"name": "connector-b", "connector": {"state": "RUNNING"}, "tasks": []}}
@@ -533,9 +537,15 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 			t.Fatal(err)
 		}
 		var record struct {
-			Message  string `json:"msg"`
-			Cluster  string `json:"connect_cluster"`
-			Endpoint string `json:"endpoint"`
+			Message     string    `json:"msg"`
+			Cluster     string    `json:"connect_cluster"`
+			Endpoint    string    `json:"endpoint"`
+			Action      string    `json:"action"`
+			Connector   string    `json:"connector"`
+			TaskID      *int      `json:"task_id"`
+			Attempts    int       `json:"attempt_count"`
+			AttemptedAt time.Time `json:"attempted_at"`
+			StatusCode  int       `json:"status_code"`
 		}
 		if err := json.Unmarshal(value, &record); err != nil {
 			t.Fatal(err)
@@ -544,12 +554,24 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 		if !exists || record.Endpoint != endpoints[record.Cluster] {
 			t.Fatalf("log lost its cluster context: %s", value)
 		}
+		if record.Action != "" && (record.Action != string(actions.RestartConnector) || record.Connector != "shared-connector" || record.TaskID != nil) {
+			t.Fatalf("log lost its action identity: %s", value)
+		}
+		if record.Message == "restart attempt recorded" {
+			wantStatus := http.StatusNoContent
+			if record.Cluster == "staging" {
+				wantStatus = http.StatusInternalServerError
+			}
+			if record.Attempts != 1 || record.AttemptedAt.IsZero() || record.StatusCode != wantStatus || record.Action == "" {
+				t.Fatalf("attempt log lost its outcome: %s", value)
+			}
+		}
 		clusterMessages[record.Message] = true
 	}
 	for name, clusterMessages := range messages {
 		for _, message := range []string{
 			"polling started", "polling settings updated", "polling stopped",
-			"failed connector detected", "sending remediation request",
+			"remediation action determined", "remediation actions determined", "requesting connector restart", "restart attempt recorded",
 			"connector restart skipped because it is in the backoff window", "poll cycle completed",
 		} {
 			if !clusterMessages[message] {
@@ -557,7 +579,7 @@ func TestClusterPollersKeepIndependentBackoffsAndApplyApplicationUpdates(t *test
 			}
 		}
 	}
-	if !messages["production"]["remediation request accepted"] || !messages["staging"]["remediation request failed"] {
+	if !messages["production"]["connector restart request accepted"] || !messages["staging"]["remediation request failed"] {
 		t.Fatal("restart success or failure logs lost their cluster identity")
 	}
 }

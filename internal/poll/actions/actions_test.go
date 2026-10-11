@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +22,63 @@ import (
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func TestTakeActionLogsRestartRequests(t *testing.T) {
+	for _, test := range []struct {
+		kind       ActionKind
+		statusCode int
+	}{
+		{RestartConnector, http.StatusAccepted},
+		{RestartTask, http.StatusNoContent},
+		{RestartTask, http.StatusInternalServerError},
+	} {
+		t.Run(string(test.kind)+" "+http.StatusText(test.statusCode), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(test.statusCode)
+			}))
+			defer server.Close()
+			var output bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&output, nil)).With("connect_cluster", "test-cluster", "endpoint", server.URL)
+			_, err := TakeAction(t.Context(), RemediationAction{ConnectorName: "test-connector", Kind: test.kind, TaskID: 2},
+				requests.ConnectAPI{HTTPClient: server.Client(), BaseURL: server.URL}, logger)
+			if (err != nil) != (test.statusCode >= 300) {
+				t.Fatalf("error = %v", err)
+			}
+			lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+			wantLines := 2
+			if test.statusCode >= 300 {
+				wantLines = 1
+			}
+			if len(lines) != wantLines {
+				t.Fatalf("logs = %s", output.String())
+			}
+			kind := "connector"
+			if test.kind == RestartTask {
+				kind = "task"
+			}
+			for index, line := range lines {
+				var entry map[string]any
+				if err := json.Unmarshal([]byte(line), &entry); err != nil {
+					t.Fatal(err)
+				}
+				wantMessage := "requesting " + kind + " restart"
+				if index == 1 {
+					wantMessage = kind + " restart request accepted"
+				}
+				if entry["level"] != "INFO" || entry["msg"] != wantMessage || entry["connector"] != "test-connector" || entry["connect_cluster"] != "test-cluster" || entry["endpoint"] != server.URL || entry["action"] != string(test.kind) {
+					t.Fatalf("log entry = %v", entry)
+				}
+				_, hasTask := entry["task_id"]
+				if hasTask != (test.kind == RestartTask) {
+					t.Fatalf("task ID presence = %v", hasTask)
+				}
+				if hasTask && entry["task_id"] != float64(2) {
+					t.Fatalf("task ID = %v", entry["task_id"])
+				}
+			}
+		})
+	}
+}
 
 func (function roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return function(request)

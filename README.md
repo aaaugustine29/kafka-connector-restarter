@@ -51,6 +51,14 @@ The HTTP API listens on port 8080 on all interfaces. `GET /` lists the available
 
 API connections have a five-second header timeout, a five-second timeout for reading the entire request including its body, a ten-second response-write timeout, and a one-minute idle timeout. All polling, restart, and backoff logs include `connect_cluster` and `endpoint`; action logs also identify the connector and, for task restarts, `task_id`. Startup logs report the configured cluster count and source, and each poller logs its effective settings, changes, and shutdown at INFO. Restart logs report requests as accepted, since an HTTP success response does not prove that the connector or task has finished restarting. Repeated failure detection, backoff skips, and poll-cycle counts and durations are logged at DEBUG; request attempts are logged at INFO and failures at ERROR. Authentication credentials are omitted. Normal shutdown cancellation does not generate polling failure logs.
 
+Each action event includes `action=restart_connector` or `action=restart_task`.
+The INFO `restart attempt recorded` event also includes `attempt_count`,
+`attempted_at`, and `status_code`, including unsuccessful requests. A status code
+of `0` means no HTTP response was received. Connector restart events omit
+`task_id`; they do not invent a task ID of zero. DEBUG determination and backoff
+events retain the same action identity, so concurrent cluster logs can be traced
+without relying on their ordering.
+
 ## Build from source
 
 Docker and the published image are optional. You can review the source, build it
@@ -322,6 +330,11 @@ kubectl kustomize examples/kubernetes
 ```
 
 ## Contributing and security
+
+A real Kafka/Connect integration stack and repeatable failure tests are available
+in [tests/e2e/](tests/e2e/README.md) for Docker Desktop Kubernetes. It uses Apache
+Kafka/Connect 4.2.2 and test-only connectors; it does not establish compatibility
+with every Kafka version or production connector plugin.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance,
 and [SECURITY.md](SECURITY.md) for private vulnerability reporting and deployment

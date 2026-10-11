@@ -71,9 +71,20 @@ func mapConnectorStatusResponse(response *http.Response) (map[string]ConnectorSt
 	if err := json.UnmarshalRead(response.Body, &responseStatuses); err != nil {
 		return nil, fmt.Errorf("decode connector statuses: %w", err)
 	}
+	if responseStatuses == nil {
+		return nil, fmt.Errorf("decode connector statuses: expected an object, got null")
+	}
 
 	connectorStatuses := make(map[string]ConnectorStatus, len(responseStatuses))
 	for name, responseStatus := range responseStatuses {
+		if responseStatus.Status.Name != name || responseStatus.Status.Connector.State == "" {
+			return nil, fmt.Errorf("decode connector statuses: missing or inconsistent status for connector %q", name)
+		}
+		for _, task := range responseStatus.Status.Tasks {
+			if task.ID < 0 || task.State == "" {
+				return nil, fmt.Errorf("decode connector statuses: invalid task status for connector %q", name)
+			}
+		}
 		connectorStatuses[name] = responseStatus.Status
 	}
 

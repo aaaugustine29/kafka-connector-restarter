@@ -41,8 +41,15 @@ func TestMapConnectorStatusResponse(t *testing.T) {
 	}
 }
 
-func TestMapConnectorStatusResponseRejectsInvalidJSON(t *testing.T) {
+func TestMapConnectorStatusResponseRejectsInvalidResponses(t *testing.T) {
 	for _, body := range []string{
+		`null`,
+		`{"connector":{}}`,
+		`{"connector":{"status":null}}`,
+		`{"connector":{"status":{"name":"other","connector":{"state":"RUNNING"}}}}`,
+		`{"connector":{"status":{"name":"connector"}}}`,
+		`{"connector":{"status":{"name":"connector","connector":{"state":"RUNNING"},"tasks":[{}]}}}`,
+		`{"connector":{"status":{"name":"connector","connector":{"state":"RUNNING"},"tasks":[{"id":-1,"state":"FAILED"}]}}}`,
 		`{} {}`,
 		`{"connector":{},"connector":{}}`,
 		`{"connector":{"status":{"name":"first","name":"second"}}}`,
@@ -53,11 +60,19 @@ func TestMapConnectorStatusResponseRejectsInvalidJSON(t *testing.T) {
 			response := &http.Response{Body: io.NopCloser(strings.NewReader(body))}
 			statuses, err := mapConnectorStatusResponse(response)
 			if err == nil {
-				t.Fatal("invalid JSON response was accepted")
+				t.Fatal("invalid status response was accepted")
 			}
 			if statuses != nil {
-				t.Fatal("invalid JSON response returned partial statuses")
+				t.Fatal("invalid status response returned partial statuses")
 			}
 		})
+	}
+}
+
+func TestMapConnectorStatusResponseAcceptsEmptyObject(t *testing.T) {
+	response := &http.Response{Body: io.NopCloser(strings.NewReader(`{}`))}
+	statuses, err := mapConnectorStatusResponse(response)
+	if err != nil || statuses == nil || len(statuses) != 0 {
+		t.Fatalf("empty snapshot = %v, %v; want an empty map without error", statuses, err)
 	}
 }
